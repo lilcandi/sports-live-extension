@@ -156,16 +156,25 @@ function renderLeagueList(searchQuery = '') {
 
 function renderLeagueItem(l) {
   const gameTag = l.game ? `<span class="league-game">${l.game}</span>` : '';
-  const sportLabel = l.game ? getSportLabel('esports') : getSportLabel(l.source === '500.com' ? 'football' : l.source === 'thesportsdb' ? 'football' : 'other');
+  let sportLabel;
+  if (l.game) {
+    sportLabel = getSportLabel('esports');
+  } else if (l.category === 'mega') {
+    sportLabel = getSportLabel('mega_events');
+  } else if (l.source === '500.com') {
+    sportLabel = getSportLabel('football');
+  } else {
+    sportLabel = getSportLabel(l.source === 'thesportsdb' ? 'football' : 'other');
+  }
+  const icon = l.category === 'mega' ? '🏅' : (l.game ? '🎮' : '⚽');
   return `
     <label class="league-item">
       <input type="checkbox" value="${l.id}" ${selectedLeagues.has(l.id) ? 'checked' : ''}>
-      <span class="league-icon">${l.game ? '🎮' : '⚽'}</span>
+      <span class="league-icon">${icon}</span>
       <span class="league-name">${l.name}</span>
       ${gameTag}
       <span class="league-sport">${sportLabel}</span>
-    </label>
-  `;
+    </label>`;
 }
 
 // ============================================================
@@ -249,7 +258,7 @@ function resetSettings() {
 // 工具函数
 // ============================================================
 function getSportLabel(sport) {
-  const map = { football: '足球', basketball: '篮球', esports: '电竞', other: '其他' };
+  const map = { football: '足球', basketball: '篮球', mega_events: '大赛', esports: '电竞', other: '其他' };
   return map[sport] || sport;
 }
 

@@ -49,9 +49,25 @@ async function loadAllCachedData() {
   allFuture = data.futureEvents || [];
 
   updateTime(data.lastUpdate);
-  renderLiveMatches();
-  renderNewsFeeds();
-  renderFutureEvents();
+
+  // 如果没有任何数据，主动触发后台刷新
+  if (allMatches.length === 0 && allFeeds.length === 0 && allFuture.length === 0) {
+    showLoading('live');
+    showLoading('news');
+    showLoading('future');
+    // 触发后台拉取数据
+    chrome.runtime.sendMessage({ type: 'refreshNow' });
+  } else {
+    renderLiveMatches();
+    renderNewsFeeds();
+    renderFutureEvents();
+  }
+}
+
+function showLoading(tab) {
+  const map = { live: 'liveScoreList', news: 'newsFeedList', future: 'futureEventList' };
+  const el = document.getElementById(map[tab]);
+  if (el) el.innerHTML = '<div class="loading">正在获取赛事数据</div>';
 }
 
 // ============================================================
@@ -302,6 +318,10 @@ async function loadFavorites() {
 
 function renderFavorites() {
   const list = document.getElementById('favoritesList');
+  if (typeof findLeague !== 'function') {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">数据加载失败</div><div class="empty-hint">请刷新扩展或重新加载</div></div>';
+    return;
+  }
   if (favorites.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">⭐</div><div class="empty-text">暂无收藏赛事</div><div class="empty-hint">在设置页面中勾选联赛后，点击收藏即可跟踪赛程</div></div>';
     return;
@@ -338,12 +358,27 @@ function renderFavorites() {
 // ============================================================
 function setupRefresh() {
   document.getElementById('refreshBtn').addEventListener('click', async () => {
-    const activeTab = document.querySelector('.tab-content.active');
-    const list = activeTab?.querySelector('div:last-child');
-    if (list) list.innerHTML = '<div class="loading">刷新中</div>';
+    const tabs = ['liveScoreList', 'newsFeedList', 'futureEventList'];
+    tabs.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '<div class="loading">刷新中</div>';
+    });
 
-    chrome.runtime.sendMessage({ type: 'refreshNow' }, () => {
-      setTimeout(() => loadAllCachedData(), 1500);
+    // 发送刷新请求，storage 监听器会自动更新 UI
+    chrome.runtime.sendMessage({ type: 'refreshNow' }, (resp) => {
+      // 如果后台没有正常返回，2秒后手动重新加载
+      if (!resp || !resp.ok) {
+        setTimeout(async () => {
+          const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate']);
+          allMatches = data.liveMatches || [];
+          allFeeds = data.contentFeeds || [];
+          allFuture = data.futureEvents || [];
+          updateTime(data.lastUpdate);
+          renderLiveMatches();
+          renderNewsFeeds();
+          renderFutureEvents();
+        }, 2000);
+      }
     });
   });
 }

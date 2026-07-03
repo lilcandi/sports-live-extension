@@ -4,7 +4,12 @@
 // ============================================================
 
 // 导入数据定义
-importScripts('data/leagues.js', 'data/sources.js');
+try {
+  importScripts('data/leagues.js', 'data/sources.js');
+  console.log('[赛事实时播报] 数据文件加载成功，联赛数:', getAllLeagues().length);
+} catch (e) {
+  console.error('[赛事实时播报] importScripts 失败:', e.message, e.stack);
+}
 
 // ============================================================
 // 默认设置
@@ -26,15 +31,20 @@ const DEFAULT_SETTINGS = {
 // ============================================================
 // 安装 & 更新
 // ============================================================
-chrome.runtime.onInstalled.addListener((details) => {
-  console.log('[赛事实时播报 v2.0] 已安装/更新:', details.reason);
-  chrome.storage.sync.get('settings', (data) => {
-    if (!data.settings) {
-      chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
-    }
-  });
+chrome.runtime.onInstalled.addListener(async (details) => {
+  console.log('[赛事实时播报 v2.0.2] 已安装/更新:', details.reason);
+  const { settings } = await chrome.storage.sync.get('settings');
+  if (!settings) {
+    await chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
+  }
   setupAllAlarms();
-  fetchAllData();
+  // 立即拉取数据
+  try {
+    const count = await fetchAllData();
+    console.log('[赛事实时播报] 初始化拉取完成，赛事数:', count.length);
+  } catch (e) {
+    console.error('[赛事实时播报] 初始化拉取失败:', e.message);
+  }
 });
 
 chrome.runtime.onStartup.addListener(() => {
@@ -119,6 +129,7 @@ async function fetchTheSportsDB() {
 
     const res = await fetch(`${BASE}/${API_KEY}/eventsday.php?d=${today}&s=Soccer`);
     const data = await res.json();
+    console.log('[TheSportsDB] 请求成功:', data.events?.length || 0, '场赛事');
     if (!data.events) return [];
 
     return data.events.map(evt => ({
@@ -752,12 +763,14 @@ async function toggleFavorite(leagueId) {
 // 8. 综合数据聚合
 // ============================================================
 async function fetchAllData() {
+  console.log('[fetchAllData] 开始拉取数据...');
   const { settings } = await chrome.storage.sync.get('settings');
   const s = settings || DEFAULT_SETTINGS;
   const selectedLeagues = s.selectedLeagues || [];
 
   // 1. 体育数据
   const tsdbMatches = await fetchTheSportsDB();
+  console.log('[fetchAllData] TheSportsDB 返回:', tsdbMatches.length, '场');
 
   // 2. 500彩票网（缓存）
   const { dailyResults } = await chrome.storage.local.get('dailyResults');
@@ -769,6 +782,8 @@ async function fetchAllData() {
   let allMatches = [...tsdbMatches];
   if (dailyResults) allMatches = allMatches.concat(dailyResults);
   if (esportsMatches) allMatches = allMatches.concat(esportsMatches);
+
+  console.log('[fetchAllData] 合并后:', allMatches.length, '场，已选联赛:', selectedLeagues.length);
 
   // 5. 按联赛过滤
   if (selectedLeagues.length > 0) {
@@ -782,6 +797,7 @@ async function fetchAllData() {
         );
       });
     });
+    console.log('[fetchAllData] 过滤后:', allMatches.length, '场');
   }
 
   // 6. 去重
@@ -799,6 +815,14 @@ async function fetchAllData() {
     liveMatches: unique,
     lastUpdate: Date.now()
   });
+
+  // 7b. 将已结束的比赛存入历史
+  const finishedMatches = unique.filter(m => m.score !== 'vs' && m.score !== '0 - 0');
+  if (finishedMatches.length > 0) {
+    await saveToHistory(finishedMatches);
+  }
+
+  console.log('[fetchAllData] 写入完成:', unique.length, '场赛事，存入历史:', finishedMatches.length, '场');
 
   // 8. 检测变化并通知
   const changes = unique.filter(m => {
