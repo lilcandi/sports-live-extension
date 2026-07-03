@@ -23,8 +23,8 @@ const DEFAULT_SETTINGS = {
   voiceGoals: true,
   voiceFinals: true,
   selectedLeagues: [],
-  sourceSettings: DEFAULT_SOURCE_SETTINGS,
-  apiTokens: DEFAULT_TOKENS,
+  sourceSettings: (typeof DEFAULT_SOURCE_SETTINGS !== 'undefined') ? DEFAULT_SOURCE_SETTINGS : {},
+  apiTokens: (typeof DEFAULT_TOKENS !== 'undefined') ? DEFAULT_TOKENS : {},
   language: 'zh',
 };
 
@@ -47,9 +47,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   }
 });
 
-chrome.runtime.onStartup.addListener(() => {
+chrome.runtime.onStartup.addListener(async () => {
   setupAllAlarms();
-  fetchAllData();
+  try {
+    const count = await fetchAllData();
+    console.log('[赛事实时播报] 启动拉取完成，赛事数:', count.length);
+  } catch (e) {
+    console.error('[赛事实时播报] 启动拉取失败:', e.message);
+  }
 });
 
 // ============================================================
@@ -255,8 +260,17 @@ async function fetchLiquipediaLOL() {
   const matches = [];
   for (const page of pages) {
     try {
-      const url = `https://liquipedia.net/leagueoflegends/api.php?action=parse&page=${page.title}&prop=text&format=json&origin=*`;
-      const res = await fetch(url);
+      const url = `https://liquipedia.net/leagueoflegends/api.php?action=parse&page=${encodeURIComponent(page.title)}&prop=text&format=json&origin=*`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'Accept': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        console.warn('[Liquipedia] LOL fetch failed:', res.status, page.title);
+        continue;
+      }
       const data = await res.json();
       if (!data.parse) continue;
 
@@ -414,7 +428,16 @@ async function fetchVLR() {
 async function fetchLiquipediaDota2() {
   try {
     const url = 'https://liquipedia.net/dota2/api.php?action=parse&page=The_International/2026&prop=text&format=json&origin=*';
-    const res = await fetch(url);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      }
+    });
+    if (!res.ok) {
+      console.warn('[Liquipedia] Dota2 fetch failed:', res.status);
+      return [];
+    }
     const data = await res.json();
     if (!data.parse) return [];
 

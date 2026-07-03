@@ -18,7 +18,8 @@ let voiceEnabled = false;
 // 初始化
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  await loadAllCachedData();
+  // 关键：storage 监听器必须在数据加载前注册，否则会错过 background 写入事件
+  setupStorageListener();
   setupTabSwitching();
   setupLiveFilters();
   setupNewsFilters();
@@ -28,8 +29,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSettings();
   setupVoiceToggle();
   setupSummaryTab();
-  setupStorageListener();
   setupCardClicks();
+
+  await loadAllCachedData();
   loadFavorites();
   loadVoiceState();
   loadYesterdaySummary();
@@ -57,11 +59,55 @@ async function loadAllCachedData() {
     showLoading('future');
     // 触发后台拉取数据
     chrome.runtime.sendMessage({ type: 'refreshNow' });
+
+    // 轮询等待数据到达（最多等15秒，每2秒检查一次）
+    pollForData(0);
   } else {
     renderLiveMatches();
     renderNewsFeeds();
     renderFutureEvents();
   }
+}
+
+function pollForData(attempt) {
+  if (attempt >= 8) {
+    // 15秒后仍未收到数据，显示超时提示
+    ['liveScoreList', 'newsFeedList', 'futureEventList'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.querySelector('.loading')) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">数据加载超时</div><div class="empty-hint">请检查网络连接后 <button class="retry-btn" id="retryBtn">点击重试</button></div></div>';
+      }
+    });
+    // 绑定重试按钮
+    setTimeout(() => {
+      const btn = document.getElementById('retryBtn');
+      if (btn) btn.addEventListener('click', () => {
+        showLoading('live'); showLoading('news'); showLoading('future');
+        chrome.runtime.sendMessage({ type: 'refreshNow' });
+        pollForData(0);
+      });
+    }, 100);
+    return;
+  }
+
+  setTimeout(async () => {
+    // 如果数据已经通过 storage 监听器到达，不再轮询
+    if (allMatches.length > 0 || allFeeds.length > 0 || allFuture.length > 0) return;
+
+    const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate']);
+    allMatches = data.liveMatches || [];
+    allFeeds = data.contentFeeds || [];
+    allFuture = data.futureEvents || [];
+    updateTime(data.lastUpdate);
+
+    if (allMatches.length > 0 || allFeeds.length > 0 || allFuture.length > 0) {
+      renderLiveMatches();
+      renderNewsFeeds();
+      renderFutureEvents();
+    } else {
+      pollForData(attempt + 1);
+    }
+  }, 2000);
 }
 
 function showLoading(tab) {

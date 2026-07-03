@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "赛事实时播报",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "实时播报体育赛事、电竞、运动会比分 - 中文资讯+历史搜索+未来赛程+收藏赛制+语音播报+昨日总结",
   "permissions": ["storage", "alarms", "notifications", "tts"],
   "host_permissions": [
