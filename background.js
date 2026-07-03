@@ -6,7 +6,7 @@
 // 导入数据定义
 try {
   importScripts('data/leagues.js', 'data/sources.js');
-  console.log('[赛事播报] 数据文件加载成功，联赛数:', typeof getAllLeagues === 'function' ? getAllLeagues().length : 'N/A');
+  console.log('[赛事播报] 数据文件加载成功，联赛数:', (typeof getAllLeagues === 'function') ? getAllLeagues().length : 'N/A');
 } catch (e) {
   console.error('[赛事播报] importScripts 失败:', e.message);
 }
@@ -96,29 +96,6 @@ const DEFAULT_SETTINGS = {
   apiTokens: (typeof DEFAULT_TOKENS !== 'undefined') ? DEFAULT_TOKENS : {},
   language: 'zh',
 };
-
-// Sel f-healing: 如果数据文件加载失败，使用最小定义
-if (typeof LEAGUES === 'undefined') {
-  var LEAGUES = { football: [], basketball: [], other_sports: [], mega_events: [], esports: [] };
-}
-if (typeof GAME_CATEGORIES === 'undefined') {
-  var GAME_CATEGORIES = {};
-}
-if (typeof CONTENT_SOURCES === 'undefined') {
-  var CONTENT_SOURCES = {};
-}
-if (typeof DEFAULT_SOURCE_SETTINGS === 'undefined') {
-  var DEFAULT_SOURCE_SETTINGS = {};
-}
-if (typeof DEFAULT_TOKENS === 'undefined') {
-  var DEFAULT_TOKENS = {};
-}
-if (typeof getAllLeagues !== 'function') {
-  function getAllLeagues() { return []; }
-}
-if (typeof findLeague !== 'function') {
-  function findLeague(id) { return null; }
-}
 
 // ============================================================
 // 安装 & 启动
@@ -503,7 +480,7 @@ async function fetchAllData() {
 
   // 按联赛过滤
   let filtered = unique;
-  if (selectedLeagues.length > 0) {
+  if (selectedLeagues.length > 0 && typeof findLeague === 'function') {
     filtered = unique.filter(match => {
       return selectedLeagues.some(leagueId => {
         const league = findLeague(leagueId);
