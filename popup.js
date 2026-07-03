@@ -1,5 +1,5 @@
 // ============================================================
-// 赛事实时播报 v2.0.2 - Popup 逻辑
+// 赛事实时播报 v2.0.4 - Popup 逻辑
 // 6个Tab: 实时赛事 | 中文资讯 | 未来赛程 | 历史搜索 | 我的收藏 | 昨日总结
 // ============================================================
 
@@ -13,6 +13,7 @@ let allFuture = [];
 let favorites = [];
 let yesterdaySummary = null;
 let voiceEnabled = false;
+let allLeagues = [];  // 从background获取的联赛列表
 
 // ============================================================
 // 初始化
@@ -31,6 +32,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSummaryTab();
   setupCardClicks();
 
+  // 加载联赛数据（用于收藏等）
+  loadLeagues();
   await loadAllCachedData();
   loadFavorites();
   loadVoiceState();
@@ -362,19 +365,30 @@ async function loadFavorites() {
   });
 }
 
+function loadLeagues() {
+  chrome.runtime.sendMessage({ type: 'getLeagues' }, (resp) => {
+    if (resp?.leagues) {
+      allLeagues = [];
+      Object.values(resp.leagues).forEach(arr => {
+        if (Array.isArray(arr)) allLeagues.push(...arr);
+      });
+    }
+  });
+}
+
+function findLeagueById(id) {
+  return allLeagues.find(l => l.id === id) || null;
+}
+
 function renderFavorites() {
   const list = document.getElementById('favoritesList');
-  if (typeof findLeague !== 'function') {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">数据加载失败</div><div class="empty-hint">请刷新扩展或重新加载</div></div>';
-    return;
-  }
   if (favorites.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">⭐</div><div class="empty-text">暂无收藏赛事</div><div class="empty-hint">在设置页面中勾选联赛后，点击收藏即可跟踪赛程</div></div>';
     return;
   }
 
   list.innerHTML = favorites.map(id => {
-    const league = findLeague(id);
+    const league = findLeagueById(id);
     if (!league) return '';
     return `
       <div class="fav-card">

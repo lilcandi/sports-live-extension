@@ -1,21 +1,13 @@
 {
   "manifest_version": 3,
   "name": "赛事实时播报",
-  "version": "2.0.3",
-  "description": "实时播报体育赛事、电竞、运动会比分 - 中文资讯+历史搜索+未来赛程+收藏赛制+语音播报+昨日总结",
+  "version": "2.0.4",
+  "description": "实时播报体育赛事结果 - 纯中文来源 500彩票网+TheSportsDB中文+虎扑",
   "permissions": ["storage", "alarms", "notifications", "tts"],
   "host_permissions": [
     "https://www.thesportsdb.com/*",
     "https://trade.500.com/*",
-    "https://m.leisu.com/*",
-    "https://api.pandascore.co/*",
-    "https://liquipedia.net/*",
-    "https://www.hltv.org/*",
-    "https://www.vlr.gg/*",
-    "https://rsshub.app/*",
-    "https://v2.alapi.cn/*",
-    "https://bbs.hupu.com/*",
-    "http://v.juhe.cn/*"
+    "https://bbs.hupu.com/*"
   ],
   "background": {
     "service_worker": "background.js"
