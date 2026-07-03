@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>赛事实时播报 - 设置</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0d1117;
+  --bg2: #161b22;
+  --ink: #e6edf3;
+  --muted: #8b949e;
+  --rule: #30363d;
+  --accent: #58a6ff;
+  --accent2: #3fb950;
+  --accent3: #f0883e;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans CJK SC', sans-serif;
+  font-size: 14px;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 20px;
+}
+
+h1 { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+h2 { font-size: 16px; font-weight: 700; margin: 28px 0 12px; color: var(--accent); }
+h2::before { content: '▸ '; }
+
+.section {
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+/* Search */
+.search-box {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.search-box:focus { border-color: var(--accent); }
+.search-box::placeholder { color: var(--muted); }
+
+/* Tabs */
+.sport-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 12px 0;
+}
+.tab {
+  padding: 6px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tab:hover { border-color: var(--accent); color: var(--ink); }
+.tab.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+
+/* League Checklist */
+.league-checklist {
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+.league-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.league-item:hover { background: rgba(88,166,255,0.06); }
+.league-item input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.league-icon { font-size: 16px; width: 22px; text-align: center; }
+.league-name { flex: 1; font-weight: 500; }
+.league-sport {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+/* Selected Tags */
+.selected-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+  min-height: 32px;
+}
+.tag-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: rgba(88,166,255,0.1);
+  border: 1px solid rgba(88,166,255,0.3);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent);
+}
+.tag-remove {
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255,107,107,0.2);
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+}
+.tag-remove:hover { background: rgba(255,107,107,0.4); }
+
+/* Settings */
+.setting-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.setting-row:last-child { border-bottom: none; }
+.setting-label { font-weight: 500; }
+.setting-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* Toggle */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.toggle input { display: none; }
+.toggle label {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: var(--rule);
+  border-radius: 24px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.toggle label::after {
+  content: '';
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 20px; height: 20px;
+  background: var(--ink);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle input:checked + label { background: var(--accent2); }
+.toggle input:checked + label::after { transform: translateX(20px); }
+
+/* Select */
+select {
+  padding: 6px 32px 6px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* Buttons */
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+}
+.btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-primary { background: var(--accent2); color: var(--bg); }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-secondary { background: var(--bg2); color: var(--muted); border: 1px solid var(--rule); }
+.btn-secondary:hover { border-color: var(--accent); color: var(--ink); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--accent2);
+  color: var(--bg);
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  z-index: 100;
+}
+.toast.show { opacity: 1; }
+
+/* Scrollbar */
+.league-checklist::-webkit-scrollbar { width: 4px; }
+.league-checklist::-webkit-scrollbar-track { background: transparent; }
+.league-checklist::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>赛事播报设置</h1>
+
+<!-- 联赛选择 -->
+<div class="section">
+  <h2>关注联赛</h2>
+  <input type="text" class="search-box" id="searchInput" placeholder="搜索联赛名称...">
+
+  <div class="sport-tabs">
+    <button class="tab active" data-sport="all">全部</button>
+    <button class="tab" data-sport="football">足球</button>
+    <button class="tab" data-sport="basketball">篮球</button>
+    <button class="tab" data-sport="other">其他</button>
+  </div>
+
+  <div class="selected-tags" id="selectedTags"></div>
+
+  <div class="league-checklist" id="leagueList"></div>
+</div>
+
+<!-- 刷新设置 -->
+<div class="section">
+  <h2>刷新设置</h2>
+  <div class="setting-row">
+    <div>
+      <div class="setting-label">数据刷新间隔</div>
+      <div class="setting-desc">更短的间隔意味着更及时的更新，但会消耗更多流量</div>
+    </div>
+    <select id="refreshInterval">
+      <option value="30">30 秒</option>
+      <option value="60">1 分钟</option>
+      <option value="120">2 分钟</option>
+      <option value="300">5 分钟</option>
+    </select>
+  </div>
+</div>
+
+<!-- 通知设置 -->
+<div class="section">
+  <h2>通知设置</h2>
+  <div class="setting-row">
+    <div>
+      <div class="setting-label">进球/得分通知</div>
+      <div class="setting-desc">赛事中有进球或得分时弹窗提醒</div>
+    </div>
+    <div class="toggle">
+      <input type="checkbox" id="notifyGoals" checked>
+      <label for="notifyGoals"></label>
+    </div>
+  </div>
+  <div class="setting-row">
+    <div>
+      <div class="setting-label">比赛结束通知</div>
+      <div class="setting-desc">赛事结束时弹窗显示最终比分</div>
+    </div>
+    <div class="toggle">
+      <input type="checkbox" id="notifyFinal" checked>
+      <label for="notifyFinal"></label>
+    </div>
+  </div>
+  <div class="setting-row">
+    <div>
+      <div class="setting-label">比赛开始通知</div>
+      <div class="setting-desc">关注的赛事开始时提醒</div>
+    </div>
+    <div class="toggle">
+      <input type="checkbox" id="notifyStart">
+      <label for="notifyStart"></label>
+    </div>
+  </div>
+</div>
+
+<div class="btn-row">
+  <button class="btn btn-primary" id="saveBtn">保存设置</button>
+  <button class="btn btn-secondary" id="resetBtn">恢复默认</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="options.js"></script>
+</body>
+</html>

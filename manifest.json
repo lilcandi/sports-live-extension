@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "赛事实时播报",
+  "version": "1.0.0",
+  "description": "实时播报体育赛事、电竞、运动会比分 - 轻量级，零依赖",
+  "permissions": ["storage", "alarms", "notifications"],
+  "host_permissions": [
+    "https://www.thesportsdb.com/*",
+    "https://trade.500.com/*",
+    "https://m.leisu.com/*",
+    "https://api.pandascore.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
