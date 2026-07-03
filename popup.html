@@ -10,6 +10,7 @@
 <header>
   <h1>赛事播报</h1>
   <div class="header-actions">
+    <button id="voiceBtn" title="语音播报开关">🔊</button>
     <button id="refreshBtn" title="手动刷新全部数据">↻</button>
     <button id="settingsBtn" title="设置">⚙</button>
   </div>
@@ -22,6 +23,7 @@
   <button class="main-tab" data-tab="future">未来赛程</button>
   <button class="main-tab" data-tab="history">历史搜索</button>
   <button class="main-tab" data-tab="favs">我的收藏</button>
+  <button class="main-tab" data-tab="summary">昨日总结</button>
 </nav>
 
 <!-- ========== Tab 1: 实时赛事 ========== -->
@@ -81,6 +83,15 @@
 <!-- ========== Tab 5: 我的收藏 ========== -->
 <section class="tab-content" id="tab-favs">
   <div id="favoritesList"></div>
+</section>
+
+<!-- ========== Tab 6: 昨日总结 ========== -->
+<section class="tab-content" id="tab-summary">
+  <div class="summary-header">
+    <span id="summaryDate"></span>
+    <button id="refreshSummaryBtn" class="btn-sm">刷新总结</button>
+  </div>
+  <div id="summaryContent"></div>
 </section>
 
 <!-- Footer -->

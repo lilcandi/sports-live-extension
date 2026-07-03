@@ -1,9 +1,9 @@
 // ============================================================
-// 赛事实时播报 - Service Worker (Manifest V3) v2.0
-// 功能：体育+电竞+中文内容源+历史搜索+未来赛事+收藏赛制
+// 赛事实时播报 - Service Worker (Manifest V3) v2.0.2
+// 功能：体育+电竞+中文内容源+历史搜索+未来赛事+收藏赛制+语音播报+昨日总结
 // ============================================================
 
-// 导入数据定义（MV3 SW 支持 import）
+// 导入数据定义
 importScripts('data/leagues.js', 'data/sources.js');
 
 // ============================================================
@@ -14,6 +14,9 @@ const DEFAULT_SETTINGS = {
   notifyGoals: true,
   notifyFinal: true,
   notifyStart: false,
+  voiceAnnounce: false,
+  voiceGoals: true,
+  voiceFinals: true,
   selectedLeagues: [],
   sourceSettings: DEFAULT_SOURCE_SETTINGS,
   apiTokens: DEFAULT_TOKENS,
@@ -50,6 +53,8 @@ function setupAllAlarms() {
     chrome.alarms.create('fetchContent', { periodInMinutes: 10 });      // 10分钟 - 中文内容
     chrome.alarms.create('fetchFutureEvents', { periodInMinutes: 30 }); // 30分钟 - 未来赛事
     chrome.alarms.create('cleanold', { periodInMinutes: 120 });         // 2小时 - 清理
+    // 每日早上8点生成昨日总结
+    chrome.alarms.create('yesterdaySummary', { when: getNextTime(8, 0), periodInMinutes: 1440 });
   });
 }
 
@@ -61,6 +66,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     case 'fetchContent':      await fetchContentFeeds(); break;
     case 'fetchFutureEvents': await fetchFutureEvents(); break;
     case 'cleanold':          cleanOldData(); break;
+    case 'yesterdaySummary':  await generateYesterdaySummary(); break;
   }
 });
 
@@ -92,6 +98,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return true;
     case 'clearHistory':
       chrome.storage.local.set({ matchHistory: {} }).then(() => sendResponse({ ok: true }));
+      return true;
+    case 'getYesterdaySummary':
+      getYesterdaySummaryCache().then(r => sendResponse(r));
+      return true;
+    case 'toggleVoice':
+      toggleVoice().then(r => sendResponse(r));
       return true;
   }
 });
@@ -837,6 +849,21 @@ function notifyMatch(match, type) {
     message: message,
     priority: 2
   });
+
+  // 语音播报
+  chrome.storage.sync.get('settings', (data) => {
+    const s = data.settings || DEFAULT_SETTINGS;
+    if (s.voiceAnnounce) {
+      if (type === 'goal' && s.voiceGoals) {
+        const voiceText = `进球！${match.home} ${match.score} ${match.away}`;
+        chrome.tts.speak(voiceText, { lang: 'zh-CN', rate: 0.9, pitch: 1.0 });
+      }
+      if (type === 'final' && s.voiceFinals) {
+        const voiceText = `比赛结束，${match.league}，${match.home} ${match.score} ${match.away}`;
+        chrome.tts.speak(voiceText, { lang: 'zh-CN', rate: 0.85, pitch: 1.0 });
+      }
+    }
+  });
 }
 
 // ============================================================
@@ -851,4 +878,136 @@ function cleanOldData() {
       }
     }
   });
+}
+
+// ============================================================
+// 11. 昨日赛事总结
+// ============================================================
+async function generateYesterdaySummary() {
+  const yesterday = new Date(Date.now() - 86400000);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const { matchHistory } = await chrome.storage.local.get('matchHistory');
+  const history = matchHistory || {};
+
+  const yesterdayMatches = Object.values(history).filter(m => m.savedDate === yesterdayStr);
+
+  if (yesterdayMatches.length === 0) {
+    const summary = {
+      date: yesterdayStr,
+      dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
+      total: 0,
+      bySport: {},
+      byLeague: {},
+      highlights: [],
+      topText: `${yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}暂无赛事记录`,
+    };
+    await chrome.storage.local.set({ yesterdaySummary: summary, yesterdaySummaryDate: yesterdayStr });
+    return summary;
+  }
+
+  // 按运动分类
+  const bySport = {};
+  const byLeague = {};
+  const highlights = [];
+
+  yesterdayMatches.forEach(m => {
+    const sport = m.sport || '其他';
+    if (!bySport[sport]) bySport[sport] = { count: 0, matches: [] };
+    bySport[sport].count++;
+    bySport[sport].matches.push(m);
+
+    const league = m.league || '未知赛事';
+    if (!byLeague[league]) byLeague[league] = { count: 0, matches: [] };
+    byLeague[league].count++;
+    byLeague[league].matches.push(m);
+
+    // 收集高光比赛（大比分）
+    if (m.score && m.score !== 'vs') {
+      const parts = m.score.split('-').map(Number);
+      if (parts.length === 2) {
+        const total = parts[0] + parts[1];
+        if (total >= 4) {
+          highlights.push({
+            match: `${m.home} ${m.score} ${m.away}`,
+            league: m.league || '',
+            game: m.game || '',
+            sport: m.sport || '',
+          });
+        }
+      }
+    }
+  });
+
+  // 生成文字总结
+  const sportNames = { football: '足球', basketball: '篮球', esports: '电竞' };
+  const sportParts = Object.entries(bySport).map(([k, v]) => {
+    const name = sportNames[k] || (k === 'other' ? '其他' : k);
+    return `${name}${v.count}场`;
+  });
+
+  const topText = `${yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}共进行${yesterdayMatches.length}场比赛，${sportParts.join('，')}`;
+
+  const summary = {
+    date: yesterdayStr,
+    dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
+    total: yesterdayMatches.length,
+    bySport,
+    byLeague,
+    highlights: highlights.slice(0, 10),
+    topText,
+  };
+
+  await chrome.storage.local.set({ yesterdaySummary: summary, yesterdaySummaryDate: yesterdayStr });
+
+  // 如果有高光比赛，发送通知
+  if (highlights.length > 0) {
+    chrome.notifications.create('yesterday-summary', {
+      type: 'basic',
+      iconUrl: 'icons/icon-128.png',
+      title: '📊 昨日赛事总结',
+      message: topText + (highlights.length > 0 ? `\n高光比赛：${highlights[0].match}` : ''),
+      priority: 1,
+    });
+  }
+
+  return summary;
+}
+
+// 获取缓存的昨日总结（不重新生成）
+async function getYesterdaySummaryCache() {
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const { yesterdaySummary, yesterdaySummaryDate } = await chrome.storage.local.get(['yesterdaySummary', 'yesterdaySummaryDate']);
+
+  if (yesterdaySummary && yesterdaySummaryDate === yesterday) {
+    return { summary: yesterdaySummary, cached: true };
+  }
+  return { summary: yesterdaySummary || null, cached: false };
+}
+
+// ============================================================
+// 12. 语音播报开关
+// ============================================================
+async function toggleVoice() {
+  const { settings } = await chrome.storage.sync.get('settings');
+  const s = settings || DEFAULT_SETTINGS;
+  s.voiceAnnounce = !s.voiceAnnounce;
+  await chrome.storage.sync.set({ settings: s });
+
+  if (s.voiceAnnounce) {
+    chrome.tts.speak('语音播报已开启', { lang: 'zh-CN', rate: 1.0 });
+  }
+  return { voiceAnnounce: s.voiceAnnounce };
+}
+
+// ============================================================
+// 13. 辅助函数：计算下一次指定时间
+// ============================================================
+function getNextTime(hour, minute) {
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hour, minute, 0, 0);
+  if (target <= now) {
+    target.setDate(target.getDate() + 1);
+  }
+  return target.getTime();
 }

@@ -1,5 +1,5 @@
 // ============================================================
-// 赛事实时播报 v2.0 - 设置页面逻辑
+// 赛事实时播报 v2.0.2 - 设置页面逻辑
 // ============================================================
 
 const DEFAULT_SETTINGS = {
@@ -7,6 +7,9 @@ const DEFAULT_SETTINGS = {
   notifyGoals: true,
   notifyFinal: true,
   notifyStart: false,
+  voiceAnnounce: false,
+  voiceGoals: true,
+  voiceFinals: true,
   selectedLeagues: [],
   sourceSettings: DEFAULT_SOURCE_SETTINGS,
   apiTokens: DEFAULT_TOKENS,
@@ -71,6 +74,9 @@ async function loadSettings() {
   document.getElementById('notifyGoals').checked = s.notifyGoals !== false;
   document.getElementById('notifyFinal').checked = s.notifyFinal !== false;
   document.getElementById('notifyStart').checked = s.notifyStart === true;
+  document.getElementById('voiceAnnounce').checked = s.voiceAnnounce === true;
+  document.getElementById('voiceGoals').checked = s.voiceGoals !== false;
+  document.getElementById('voiceFinals').checked = s.voiceFinals !== false;
 
   // 内容源
   const src = s.sourceSettings || DEFAULT_SOURCE_SETTINGS;
@@ -100,6 +106,8 @@ function renderLeagueList(searchQuery = '') {
   if (currentSport !== 'all') {
     if (currentSport === 'esports') {
       filtered = LEAGUES.esports;
+    } else if (currentSport === 'mega_events') {
+      filtered = LEAGUES.mega_events;
     } else if (currentSport === 'other') {
       filtered = LEAGUES.other_sports;
     } else {
@@ -185,6 +193,9 @@ async function saveSettings() {
     notifyGoals: document.getElementById('notifyGoals').checked,
     notifyFinal: document.getElementById('notifyFinal').checked,
     notifyStart: document.getElementById('notifyStart').checked,
+    voiceAnnounce: document.getElementById('voiceAnnounce').checked,
+    voiceGoals: document.getElementById('voiceGoals').checked,
+    voiceFinals: document.getElementById('voiceFinals').checked,
     selectedLeagues: [...selectedLeagues],
     sourceSettings: {
       weibo:         { enabled: document.getElementById('src-weibo').checked, interval: 10 },
@@ -215,6 +226,9 @@ function resetSettings() {
   document.getElementById('notifyGoals').checked = DEFAULT_SETTINGS.notifyGoals;
   document.getElementById('notifyFinal').checked = DEFAULT_SETTINGS.notifyFinal;
   document.getElementById('notifyStart').checked = DEFAULT_SETTINGS.notifyStart;
+  document.getElementById('voiceAnnounce').checked = DEFAULT_SETTINGS.voiceAnnounce;
+  document.getElementById('voiceGoals').checked = DEFAULT_SETTINGS.voiceGoals;
+  document.getElementById('voiceFinals').checked = DEFAULT_SETTINGS.voiceFinals;
 
   document.getElementById('src-weibo').checked = true;
   document.getElementById('src-zhihu').checked = true;

@@ -41,6 +41,26 @@ const LEAGUES = {
     { id: 'boxing',          name: '拳击',         keywords: ['Boxing', 'WBC', 'WBA', 'IBF'], source: 'thesportsdb' },
   ],
 
+  // ========== 超大赛事 ==========
+  mega_events: [
+    { id: 'fifa-world-cup',    name: 'FIFA世界杯',     keywords: ['世界杯', 'World Cup', 'FIFA World Cup'], source: 'thesportsdb', category: 'mega' },
+    { id: 'olympics-summer',   name: '夏季奥运会',     keywords: ['奥运会', 'Olympic Games', 'Summer Olympics', 'Olympics', '奥运'], source: 'thesportsdb', category: 'mega' },
+    { id: 'olympics-winter',   name: '冬季奥运会',     keywords: ['冬奥会', 'Winter Olympics', '冬奥', 'Winter Games'], source: 'thesportsdb', category: 'mega' },
+    { id: 'asian-games',       name: '亚运会',         keywords: ['亚运会', 'Asian Games', 'Asiad', '亚运'], source: 'thesportsdb', category: 'mega' },
+    { id: 'uefa-euro-mega',    name: '欧洲杯',         keywords: ['欧洲杯', 'Euro', 'UEFA Euro', 'European Championship'], source: 'thesportsdb', category: 'mega' },
+    { id: 'copa-america-mega', name: '美洲杯',         keywords: ['美洲杯', 'Copa America'], source: 'thesportsdb', category: 'mega' },
+    { id: 'afc-asian-cup',     name: '亚洲杯',         keywords: ['亚洲杯', 'AFC Asian Cup'], source: 'thesportsdb', category: 'mega' },
+    { id: 'afcon',             name: '非洲杯',         keywords: ['非洲杯', 'AFCON', 'Africa Cup of Nations'], source: 'thesportsdb', category: 'mega' },
+    { id: 'uefa-nations',      name: '欧国联',         keywords: ['欧国联', 'UEFA Nations League'], source: 'thesportsdb', category: 'mega' },
+    { id: 'fiba-world-cup-m',  name: '篮球世界杯',     keywords: ['篮球世界杯', 'FIBA World Cup', 'FIBA Basketball'], source: 'thesportsdb', category: 'mega' },
+    { id: 'rugby-world-cup',   name: '橄榄球世界杯',   keywords: ['Rugby World Cup', '橄榄球世界杯'], source: 'thesportsdb', category: 'mega' },
+    { id: 'cricket-world-cup', name: '板球世界杯',     keywords: ['Cricket World Cup', '板球世界杯'], source: 'thesportsdb', category: 'mega' },
+    { id: 'commonwealth',      name: '英联邦运动会',   keywords: ['Commonwealth Games', '英联邦运动会'], source: 'thesportsdb', category: 'mega' },
+    { id: 'pan-american',      name: '泛美运动会',     keywords: ['Pan American Games', '泛美运动会'], source: 'thesportsdb', category: 'mega' },
+    { id: 'uefa-cl-mega',      name: '欧冠决赛',       keywords: ['欧冠决赛', 'Champions League Final', 'UCL Final'], source: 'thesportsdb', category: 'mega' },
+    { id: 'copa-libertadores', name: '南美解放者杯',   keywords: ['解放者杯', 'Copa Libertadores'], source: 'thesportsdb', category: 'mega' },
+  ],
+
   // ========== 电竞 ==========
   esports: [
     // --- 英雄联盟 ---
@@ -91,6 +111,7 @@ const GAME_CATEGORIES = {
   'Overwatch': { name: '守望先锋',     icon: '🛡️', leagues: ['ow-owl', 'ow-worldcup'] },
   'R6':        { name: '彩虹六号',     icon: '💣', leagues: ['r6-invitational'] },
   '综合':       { name: '综合赛事',     icon: '🌍', leagues: ['esports-asian', 'esports-oly'] },
+  'mega':      { name: '超大赛事',     icon: '🏅', leagues: ['fifa-world-cup', 'olympics-summer', 'olympics-winter', 'asian-games', 'uefa-euro-mega', 'copa-america-mega', 'afc-asian-cup', 'afcon', 'uefa-nations', 'fiba-world-cup-m', 'rugby-world-cup', 'cricket-world-cup', 'commonwealth', 'pan-american', 'uefa-cl-mega', 'copa-libertadores'] },
 };
 
 // 获取所有联赛扁平列表
@@ -99,6 +120,7 @@ function getAllLeagues() {
     ...LEAGUES.football,
     ...LEAGUES.basketball,
     ...LEAGUES.other_sports,
+    ...LEAGUES.mega_events,
     ...LEAGUES.esports,
   ];
 }

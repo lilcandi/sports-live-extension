@@ -1,6 +1,6 @@
 // ============================================================
-// 赛事实时播报 v2.0 - Popup 逻辑
-// 5个Tab: 实时赛事 | 中文资讯 | 未来赛程 | 历史搜索 | 我的收藏
+// 赛事实时播报 v2.0.2 - Popup 逻辑
+// 6个Tab: 实时赛事 | 中文资讯 | 未来赛程 | 历史搜索 | 我的收藏 | 昨日总结
 // ============================================================
 
 let currentTab = 'live';
@@ -11,6 +11,8 @@ let allMatches = [];
 let allFeeds = [];
 let allFuture = [];
 let favorites = [];
+let yesterdaySummary = null;
+let voiceEnabled = false;
 
 // ============================================================
 // 初始化
@@ -24,9 +26,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupHistorySearch();
   setupRefresh();
   setupSettings();
+  setupVoiceToggle();
+  setupSummaryTab();
   setupStorageListener();
   setupCardClicks();
   loadFavorites();
+  loadVoiceState();
+  loadYesterdaySummary();
 });
 
 // ============================================================
@@ -367,6 +373,10 @@ function setupStorageListener() {
         if (currentTab === 'future') renderFutureEvents();
       }
       if (changes.lastUpdate) updateTime(changes.lastUpdate.newValue);
+      if (changes.yesterdaySummary) {
+        yesterdaySummary = changes.yesterdaySummary.newValue || null;
+        if (currentTab === 'summary') renderYesterdaySummary();
+      }
     }
   });
 }
@@ -433,6 +443,10 @@ function updateFooterInfo() {
       count = favorites.length;
       label = '个收藏';
       break;
+    case 'summary':
+      count = yesterdaySummary ? yesterdaySummary.total : 0;
+      label = '场昨日比赛';
+      break;
   }
   el.textContent = `${count} ${label}`;
 }
@@ -446,4 +460,113 @@ function formatTime(iso) {
   if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`;
   return d.toLocaleDateString('zh-CN');
+}
+
+// ============================================================
+// 语音播报
+// ============================================================
+function setupVoiceToggle() {
+  document.getElementById('voiceBtn').addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'toggleVoice' }, (resp) => {
+      voiceEnabled = resp?.voiceAnnounce || false;
+      updateVoiceIcon();
+    });
+  });
+}
+
+async function loadVoiceState() {
+  const { settings } = await chrome.storage.sync.get('settings');
+  voiceEnabled = settings?.voiceAnnounce || false;
+  updateVoiceIcon();
+}
+
+function updateVoiceIcon() {
+  const btn = document.getElementById('voiceBtn');
+  btn.textContent = voiceEnabled ? '🔊' : '🔇';
+  btn.title = voiceEnabled ? '语音播报：开' : '语音播报：关';
+  btn.style.opacity = voiceEnabled ? '1' : '0.5';
+}
+
+// ============================================================
+// 昨日总结
+// ============================================================
+function setupSummaryTab() {
+  document.getElementById('refreshSummaryBtn').addEventListener('click', async () => {
+    const content = document.getElementById('summaryContent');
+    content.innerHTML = '<div class="loading">生成总结中</div>';
+    chrome.runtime.sendMessage({ type: 'getYesterdaySummary' }, (resp) => {
+      yesterdaySummary = resp?.summary || null;
+      renderYesterdaySummary();
+    });
+  });
+}
+
+async function loadYesterdaySummary() {
+  chrome.runtime.sendMessage({ type: 'getYesterdaySummary' }, (resp) => {
+    yesterdaySummary = resp?.summary || null;
+    if (currentTab === 'summary') renderYesterdaySummary();
+  });
+}
+
+function renderYesterdaySummary() {
+  const content = document.getElementById('summaryContent');
+  const dateEl = document.getElementById('summaryDate');
+
+  if (!yesterdaySummary) {
+    dateEl.textContent = '';
+    content.innerHTML = '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-text">暂无昨日总结</div><div class="empty-hint">每日早上8点自动生成，或点击刷新总结</div></div>';
+    return;
+  }
+
+  dateEl.textContent = yesterdaySummary.dateDisplay || yesterdaySummary.date;
+
+  if (yesterdaySummary.total === 0) {
+    content.innerHTML = `
+      <div class="summary-card">
+        <div class="summary-title">${yesterdaySummary.topText}</div>
+        <div class="summary-empty">昨日没有赛事数据记录</div>
+      </div>`;
+    return;
+  }
+
+  let html = `<div class="summary-card">
+    <div class="summary-title">${yesterdaySummary.topText}</div>`;
+
+  if (yesterdaySummary.bySport && Object.keys(yesterdaySummary.bySport).length > 0) {
+    html += '<div class="summary-stats">';
+    const sportNames = { football: '足球', basketball: '篮球', esports: '电竞' };
+    Object.entries(yesterdaySummary.bySport).forEach(([sport, data]) => {
+      const name = sportNames[sport] || sport;
+      html += `<div class="summary-stat-item"><span class="stat-num">${data.count}</span><span class="stat-label">${name}</span></div>`;
+    });
+    html += '</div>';
+  }
+
+  if (yesterdaySummary.highlights && yesterdaySummary.highlights.length > 0) {
+    html += '<div class="summary-highlights"><h3>🔥 高光比赛</h3>';
+    yesterdaySummary.highlights.forEach(h => {
+      html += `<div class="highlight-item">
+        <span class="highlight-match">${h.match}</span>
+        <span class="highlight-league">${h.league}</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  if (yesterdaySummary.byLeague && Object.keys(yesterdaySummary.byLeague).length > 0) {
+    html += '<div class="summary-leagues"><h3>📋 联赛统计</h3>';
+    const sorted = Object.entries(yesterdaySummary.byLeague)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10);
+    sorted.forEach(([league, data]) => {
+      html += `<div class="league-stat-row">
+        <span class="league-name">${league}</span>
+        <span class="league-count">${data.count}场</span>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  content.innerHTML = html;
 }

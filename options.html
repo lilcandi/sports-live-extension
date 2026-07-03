@@ -63,7 +63,7 @@ input[type=text].token-input:focus{border-color:var(--accent)}
 <body>
 
 <h1>赛事播报设置</h1>
-<div class="version">v2.0 · 体育+电竞+中文资讯</div>
+<div class="version">v2.0.2 · 体育+电竞+中文资讯+语音播报+昨日总结</div>
 
 <!-- 联赛选择 -->
 <div class="section">
@@ -75,6 +75,7 @@ input[type=text].token-input:focus{border-color:var(--accent)}
     <button class="tab" data-sport="football">足球</button>
     <button class="tab" data-sport="basketball">篮球</button>
     <button class="tab" data-sport="esports">电竞</button>
+    <button class="tab" data-sport="mega_events">大赛</button>
     <button class="tab" data-sport="other">其他</button>
   </div>
 
@@ -110,6 +111,23 @@ input[type=text].token-input:focus{border-color:var(--accent)}
   <div class="setting-row">
     <div><div class="setting-label">比赛开始通知</div><div class="setting-desc">关注的赛事开始时提醒</div></div>
     <div class="toggle"><input type="checkbox" id="notifyStart"><label for="notifyStart"></label></div>
+  </div>
+</div>
+
+<!-- 语音播报设置 -->
+<div class="section">
+  <h2>语音播报</h2>
+  <div class="setting-row">
+    <div><div class="setting-label">启用语音播报</div><div class="setting-desc">有进球/得分或比赛结束时，使用中文语音朗读赛果</div></div>
+    <div class="toggle"><input type="checkbox" id="voiceAnnounce"><label for="voiceAnnounce"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">进球/得分语音</div><div class="setting-desc">比赛中有进球或得分时播报</div></div>
+    <div class="toggle"><input type="checkbox" id="voiceGoals" checked><label for="voiceGoals"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">比赛结束语音</div><div class="setting-desc">赛事结束时播报最终比分</div></div>
+    <div class="toggle"><input type="checkbox" id="voiceFinals" checked><label for="voiceFinals"></label></div>
   </div>
 </div>
 
