@@ -1,14 +1,21 @@
 {
   "manifest_version": 3,
   "name": "赛事实时播报",
-  "version": "1.0.0",
-  "description": "实时播报体育赛事、电竞、运动会比分 - 轻量级，零依赖",
+  "version": "2.0.0",
+  "description": "实时播报体育赛事、电竞、运动会比分 - 中文资讯+历史搜索+未来赛程+收藏赛制",
   "permissions": ["storage", "alarms", "notifications"],
   "host_permissions": [
     "https://www.thesportsdb.com/*",
     "https://trade.500.com/*",
     "https://m.leisu.com/*",
-    "https://api.pandascore.co/*"
+    "https://api.pandascore.co/*",
+    "https://liquipedia.net/*",
+    "https://www.hltv.org/*",
+    "https://www.vlr.gg/*",
+    "https://rsshub.app/*",
+    "https://v2.alapi.cn/*",
+    "https://bbs.hupu.com/*",
+    "http://v.juhe.cn/*"
   ],
   "background": {
     "service_worker": "background.js",

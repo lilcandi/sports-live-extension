@@ -3,263 +3,82 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>赛事实时播报 - 设置</title>
+<title>赛事实时播报 v2.0 - 设置</title>
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-:root {
-  --bg: #0d1117;
-  --bg2: #161b22;
-  --ink: #e6edf3;
-  --muted: #8b949e;
-  --rule: #30363d;
-  --accent: #58a6ff;
-  --accent2: #3fb950;
-  --accent3: #f0883e;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans CJK SC', sans-serif;
-  font-size: 14px;
-  background: var(--bg);
-  color: var(--ink);
-  line-height: 1.6;
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 32px 20px;
-}
-
-h1 { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
-h2 { font-size: 16px; font-weight: 700; margin: 28px 0 12px; color: var(--accent); }
-h2::before { content: '▸ '; }
-
-.section {
-  background: var(--bg2);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  padding: 16px 20px;
-  margin-bottom: 16px;
-}
-
-/* Search */
-.search-box {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--ink);
-  font-size: 14px;
-  outline: none;
-  transition: border-color 0.15s;
-}
-.search-box:focus { border-color: var(--accent); }
-.search-box::placeholder { color: var(--muted); }
-
-/* Tabs */
-.sport-tabs {
-  display: flex;
-  gap: 6px;
-  margin: 12px 0;
-}
-.tab {
-  padding: 6px 16px;
-  border: 1px solid var(--rule);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
-  font-size: 13px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.tab:hover { border-color: var(--accent); color: var(--ink); }
-.tab.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
-
-/* League Checklist */
-.league-checklist {
-  max-height: 360px;
-  overflow-y: auto;
-  margin: 12px 0;
-}
-.league-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.league-item:hover { background: rgba(88,166,255,0.06); }
-.league-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  accent-color: var(--accent);
-  cursor: pointer;
-}
-.league-icon { font-size: 16px; width: 22px; text-align: center; }
-.league-name { flex: 1; font-weight: 500; }
-.league-sport {
-  font-size: 11px;
-  color: var(--muted);
-  background: var(--bg);
-  padding: 2px 8px;
-  border-radius: 999px;
-}
-
-/* Selected Tags */
-.selected-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 12px 0;
-  min-height: 32px;
-}
-.tag-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  background: rgba(88,166,255,0.1);
-  border: 1px solid rgba(88,166,255,0.3);
-  border-radius: 999px;
-  font-size: 12px;
-  color: var(--accent);
-}
-.tag-remove {
-  width: 18px;
-  height: 18px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(255,107,107,0.2);
-  color: var(--accent);
-  font-size: 12px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 2px;
-}
-.tag-remove:hover { background: rgba(255,107,107,0.4); }
-
-/* Settings */
-.setting-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.setting-row:last-child { border-bottom: none; }
-.setting-label { font-weight: 500; }
-.setting-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
-
-/* Toggle */
-.toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  flex-shrink: 0;
-}
-.toggle input { display: none; }
-.toggle label {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: var(--rule);
-  border-radius: 24px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.toggle label::after {
-  content: '';
-  position: absolute;
-  top: 2px; left: 2px;
-  width: 20px; height: 20px;
-  background: var(--ink);
-  border-radius: 50%;
-  transition: transform 0.2s;
-}
-.toggle input:checked + label { background: var(--accent2); }
-.toggle input:checked + label::after { transform: translateX(20px); }
-
-/* Select */
-select {
-  padding: 6px 32px 6px 10px;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--bg);
-  color: var(--ink);
-  font-size: 13px;
-  cursor: pointer;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-}
-
-/* Buttons */
-.btn-row {
-  display: flex;
-  gap: 10px;
-  margin-top: 24px;
-}
-.btn {
-  padding: 10px 24px;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn-primary { background: var(--accent2); color: var(--bg); }
-.btn-primary:hover { filter: brightness(1.1); }
-.btn-secondary { background: var(--bg2); color: var(--muted); border: 1px solid var(--rule); }
-.btn-secondary:hover { border-color: var(--accent); color: var(--ink); }
-
-/* Toast */
-.toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--accent2);
-  color: var(--bg);
-  padding: 10px 24px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  opacity: 0;
-  transition: opacity 0.3s;
-  pointer-events: none;
-  z-index: 100;
-}
-.toast.show { opacity: 1; }
-
-/* Scrollbar */
-.league-checklist::-webkit-scrollbar { width: 4px; }
-.league-checklist::-webkit-scrollbar-track { background: transparent; }
-.league-checklist::-webkit-scrollbar-thumb { background: var(--rule); border-radius: 4px; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d1117;--bg2:#161b22;--ink:#e6edf3;--muted:#8b949e;--rule:#30363d;--accent:#58a6ff;--accent2:#3fb950;--accent3:#f0883e;--accent4:#ff6b6b;--accent5:#a371f7}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans CJK SC','PingFang SC','Microsoft YaHei',sans-serif;font-size:14px;background:var(--bg);color:var(--ink);line-height:1.6;max-width:800px;margin:0 auto;padding:32px 20px}
+h1{font-size:22px;font-weight:700;margin-bottom:8px}
+h2{font-size:16px;font-weight:700;margin:28px 0 12px;color:var(--accent)}
+h2::before{content:'▸ '}
+.version{font-size:12px;color:var(--muted);margin-bottom:20px}
+.section{background:var(--bg2);border:1px solid var(--rule);border-radius:8px;padding:16px 20px;margin-bottom:16px}
+.search-box{width:100%;padding:10px 14px;border:1px solid var(--rule);border-radius:8px;background:var(--bg);color:var(--ink);font-size:14px;outline:none;transition:border-color .15s}
+.search-box:focus{border-color:var(--accent)}
+.search-box::placeholder{color:var(--muted)}
+.sport-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.tab{padding:6px 14px;border:1px solid var(--rule);border-radius:999px;background:var(--bg);color:var(--muted);font-size:13px;cursor:pointer;transition:all .15s}
+.tab:hover{border-color:var(--accent);color:var(--ink)}
+.tab.active{background:var(--accent);color:var(--bg);border-color:var(--accent)}
+.league-checklist{max-height:360px;overflow-y:auto;margin:12px 0}
+.league-checklist::-webkit-scrollbar{width:4px}
+.league-checklist::-webkit-scrollbar-track{background:transparent}
+.league-checklist::-webkit-scrollbar-thumb{background:var(--rule);border-radius:4px}
+.league-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;cursor:pointer;transition:background .15s}
+.league-item:hover{background:rgba(88,166,255,.06)}
+.league-item input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
+.league-icon{font-size:16px;width:22px;text-align:center}
+.league-name{flex:1;font-weight:500}
+.league-sport{font-size:11px;color:var(--muted);background:var(--bg);padding:2px 8px;border-radius:999px}
+.league-game{font-size:11px;color:var(--accent5);background:rgba(163,113,247,.1);padding:2px 8px;border-radius:999px;margin-right:4px}
+.selected-tags{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;min-height:32px}
+.tag-item{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.3);border-radius:999px;font-size:12px;color:var(--accent)}
+.tag-remove{width:18px;height:18px;border:none;border-radius:50%;background:rgba(255,107,107,.2);color:var(--accent4);font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;margin-left:2px}
+.tag-remove:hover{background:rgba(255,107,107,.4)}
+.setting-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--rule)}
+.setting-row:last-child{border-bottom:none}
+.setting-label{font-weight:500}
+.setting-desc{font-size:12px;color:var(--muted);margin-top:2px}
+.toggle{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle input{display:none}
+.toggle label{position:absolute;top:0;left:0;right:0;bottom:0;background:var(--rule);border-radius:24px;cursor:pointer;transition:background .2s}
+.toggle label::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:var(--ink);border-radius:50%;transition:transform .2s}
+.toggle input:checked+label{background:var(--accent2)}
+.toggle input:checked+label::after{transform:translateX(20px)}
+select{padding:6px 32px 6px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);font-size:13px;cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center}
+input[type=text].token-input{width:100%;padding:8px 12px;border:1px solid var(--rule);border-radius:6px;background:var(--bg);color:var(--ink);font-size:13px;outline:none;margin-top:4px}
+input[type=text].token-input:focus{border-color:var(--accent)}
+.token-hint{font-size:11px;color:var(--muted);margin-top:4px}
+.token-hint a{color:var(--accent)}
+.btn-row{display:flex;gap:10px;margin-top:24px}
+.btn{padding:10px 24px;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s}
+.btn-primary{background:var(--accent2);color:var(--bg)}
+.btn-primary:hover{filter:brightness(1.1)}
+.btn-secondary{background:var(--bg2);color:var(--muted);border:1px solid var(--rule)}
+.btn-secondary:hover{border-color:var(--accent);color:var(--ink)}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent2);color:var(--bg);padding:10px 24px;border-radius:8px;font-weight:600;font-size:14px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:100}
+.toast.show{opacity:1}
 </style>
 </head>
 <body>
 
 <h1>赛事播报设置</h1>
+<div class="version">v2.0 · 体育+电竞+中文资讯</div>
 
 <!-- 联赛选择 -->
 <div class="section">
   <h2>关注联赛</h2>
-  <input type="text" class="search-box" id="searchInput" placeholder="搜索联赛名称...">
+  <input type="text" class="search-box" id="searchInput" placeholder="搜索联赛或赛事名称...">
 
   <div class="sport-tabs">
     <button class="tab active" data-sport="all">全部</button>
     <button class="tab" data-sport="football">足球</button>
     <button class="tab" data-sport="basketball">篮球</button>
+    <button class="tab" data-sport="esports">电竞</button>
     <button class="tab" data-sport="other">其他</button>
   </div>
 
   <div class="selected-tags" id="selectedTags"></div>
-
   <div class="league-checklist" id="leagueList"></div>
 </div>
 
@@ -267,10 +86,7 @@ select {
 <div class="section">
   <h2>刷新设置</h2>
   <div class="setting-row">
-    <div>
-      <div class="setting-label">数据刷新间隔</div>
-      <div class="setting-desc">更短的间隔意味着更及时的更新，但会消耗更多流量</div>
-    </div>
+    <div><div class="setting-label">数据刷新间隔</div><div class="setting-desc">更短的间隔意味着更及时的更新</div></div>
     <select id="refreshInterval">
       <option value="30">30 秒</option>
       <option value="60">1 分钟</option>
@@ -284,34 +100,60 @@ select {
 <div class="section">
   <h2>通知设置</h2>
   <div class="setting-row">
-    <div>
-      <div class="setting-label">进球/得分通知</div>
-      <div class="setting-desc">赛事中有进球或得分时弹窗提醒</div>
-    </div>
-    <div class="toggle">
-      <input type="checkbox" id="notifyGoals" checked>
-      <label for="notifyGoals"></label>
-    </div>
+    <div><div class="setting-label">进球/得分通知</div><div class="setting-desc">赛事中有进球或得分时弹窗提醒</div></div>
+    <div class="toggle"><input type="checkbox" id="notifyGoals" checked><label for="notifyGoals"></label></div>
   </div>
   <div class="setting-row">
-    <div>
-      <div class="setting-label">比赛结束通知</div>
-      <div class="setting-desc">赛事结束时弹窗显示最终比分</div>
-    </div>
-    <div class="toggle">
-      <input type="checkbox" id="notifyFinal" checked>
-      <label for="notifyFinal"></label>
-    </div>
+    <div><div class="setting-label">比赛结束通知</div><div class="setting-desc">赛事结束时弹窗显示最终比分</div></div>
+    <div class="toggle"><input type="checkbox" id="notifyFinal" checked><label for="notifyFinal"></label></div>
   </div>
   <div class="setting-row">
-    <div>
-      <div class="setting-label">比赛开始通知</div>
-      <div class="setting-desc">关注的赛事开始时提醒</div>
-    </div>
-    <div class="toggle">
-      <input type="checkbox" id="notifyStart">
-      <label for="notifyStart"></label>
-    </div>
+    <div><div class="setting-label">比赛开始通知</div><div class="setting-desc">关注的赛事开始时提醒</div></div>
+    <div class="toggle"><input type="checkbox" id="notifyStart"><label for="notifyStart"></label></div>
+  </div>
+</div>
+
+<!-- 中文内容源 -->
+<div class="section">
+  <h2>中文内容源</h2>
+  <div class="setting-row">
+    <div><div class="setting-label">微博热搜</div><div class="setting-desc">体育/电竞相关热搜话题</div></div>
+    <div class="toggle"><input type="checkbox" id="src-weibo" checked><label for="src-weibo"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">知乎热榜</div><div class="setting-desc">体育/电竞相关知乎讨论</div></div>
+    <div class="toggle"><input type="checkbox" id="src-zhihu" checked><label for="src-zhihu"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">虎扑论坛</div><div class="setting-desc">虎扑步行街体育讨论</div></div>
+    <div class="toggle"><input type="checkbox" id="src-hupu" checked><label for="src-hupu"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">虎扑电竞</div><div class="setting-desc">虎扑电竞专区讨论</div></div>
+    <div class="toggle"><input type="checkbox" id="src-hupu_esports" checked><label for="src-hupu_esports"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">知乎电竞话题</div><div class="setting-desc">知乎电竞话题精华内容</div></div>
+    <div class="toggle"><input type="checkbox" id="src-zhihu_esports"><label for="src-zhihu_esports"></label></div>
+  </div>
+  <div class="setting-row">
+    <div><div class="setting-label">头条体育新闻</div><div class="setting-desc">聚合数据新闻头条API（需Key）</div></div>
+    <div class="toggle"><input type="checkbox" id="src-toutiao"><label for="src-toutiao"></label></div>
+  </div>
+</div>
+
+<!-- API Token 设置 -->
+<div class="section">
+  <h2>API 密钥（可选）</h2>
+  <div class="setting-row" style="flex-direction:column;align-items:flex-start">
+    <div class="setting-label">ALAPI Token（微博热搜）</div>
+    <input type="text" class="token-input" id="token-alapi" placeholder="留空使用 RSSHub 免费路由">
+    <div class="token-hint">免费获取：<a href="https://v2.alapi.cn/" target="_blank">https://v2.alapi.cn/</a> 扫码关注公众号</div>
+  </div>
+  <div class="setting-row" style="flex-direction:column;align-items:flex-start;margin-top:12px">
+    <div class="setting-label">聚合数据 Key（头条新闻）</div>
+    <input type="text" class="token-input" id="token-juhe" placeholder="留空则不启用头条新闻">
+    <div class="token-hint">免费注册：<a href="https://www.juhe.cn/" target="_blank">https://www.juhe.cn/</a></div>
   </div>
 </div>
 
@@ -322,6 +164,8 @@ select {
 
 <div class="toast" id="toast"></div>
 
+<script src="data/leagues.js"></script>
+<script src="data/sources.js"></script>
 <script src="options.js"></script>
 </body>
 </html>
