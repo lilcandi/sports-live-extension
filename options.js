@@ -1,5 +1,5 @@
 // ============================================================
-// 赛事实时播报 v2.0.2 - 设置页面逻辑
+// 赛事实时播报 v2.0.5 - 设置页面逻辑
 // ============================================================
 
 const DEFAULT_SETTINGS = {
@@ -104,15 +104,7 @@ function renderLeagueList(searchQuery = '') {
   let filtered = getAllLeagues();
 
   if (currentSport !== 'all') {
-    if (currentSport === 'esports') {
-      filtered = LEAGUES.esports;
-    } else if (currentSport === 'mega_events') {
-      filtered = LEAGUES.mega_events;
-    } else if (currentSport === 'other') {
-      filtered = LEAGUES.other_sports;
-    } else {
-      filtered = LEAGUES[currentSport] || [];
-    }
+    filtered = LEAGUES[currentSport] || [];
   }
 
   if (searchQuery) {
@@ -156,17 +148,8 @@ function renderLeagueList(searchQuery = '') {
 
 function renderLeagueItem(l) {
   const gameTag = l.game ? `<span class="league-game">${l.game}</span>` : '';
-  let sportLabel;
-  if (l.game) {
-    sportLabel = getSportLabel('esports');
-  } else if (l.category === 'mega') {
-    sportLabel = getSportLabel('mega_events');
-  } else if (l.source === '500.com') {
-    sportLabel = getSportLabel('football');
-  } else {
-    sportLabel = getSportLabel(l.source === 'thesportsdb' ? 'football' : 'other');
-  }
-  const icon = l.category === 'mega' ? '🏅' : (l.game ? '🎮' : '⚽');
+  let sportLabel = l.game ? getSportLabel('esports') : getSportLabel(l.sport || 'football');
+  let icon = l.game ? '🎮' : (l.sport === 'motorsport' ? '🏎️' : (l.sport === 'basketball' ? '🏀' : '⚽'));
   return `
     <label class="league-item">
       <input type="checkbox" value="${l.id}" ${selectedLeagues.has(l.id) ? 'checked' : ''}>
@@ -258,7 +241,7 @@ function resetSettings() {
 // 工具函数
 // ============================================================
 function getSportLabel(sport) {
-  const map = { football: '足球', basketball: '篮球', mega_events: '大赛', esports: '电竞', other: '其他' };
+  const map = { football: '世界杯', basketball: 'NBA', motorsport: 'F1', esports: '电竞' };
   return map[sport] || sport;
 }
 

@@ -1,6 +1,6 @@
 // ============================================================
-// 赛事实时播报 v2.0.4 - Popup 逻辑
-// 6个Tab: 实时赛事 | 中文资讯 | 未来赛程 | 历史搜索 | 我的收藏 | 昨日总结
+// 赛事实时播报 v2.0.5 - Popup 逻辑
+// 精简版：世界杯 | NBA | F1 | LOL/MSI/S赛 | 瓦罗兰特 | CS2
 // ============================================================
 
 let currentTab = 'live';
@@ -155,11 +155,7 @@ function renderLiveMatches() {
   let filtered = allMatches;
 
   if (currentLiveFilter !== 'all') {
-    if (currentLiveFilter === 'other') {
-      filtered = allMatches.filter(m => m.sport && !['football', 'basketball', 'esports'].includes(m.sport));
-    } else {
-      filtered = allMatches.filter(m => m.sport === currentLiveFilter);
-    }
+    filtered = allMatches.filter(m => m.sport === currentLiveFilter);
   }
 
   if (filtered.length === 0) {
@@ -217,12 +213,25 @@ function setupNewsFilters() {
 function renderNewsFeeds() {
   const list = document.getElementById('newsFeedList');
   let filtered = allFeeds;
+
+  // 如果没有资讯数据，用赛事结果作为后备
+  if (filtered.length === 0 && allMatches.length > 0) {
+    const finished = allMatches.filter(m => m.score !== 'vs' && m.status === '已结束');
+    if (finished.length > 0) {
+      filtered = finished.slice(0, 20).map(m => ({
+        id: `news-${m.id}`, title: `${m.league}：${m.home} ${m.score} ${m.away}`,
+        url: m.detailUrl || '#', source: m.source, sourceIcon: m.sport === 'football' ? '⚽' : (m.sport === 'basketball' ? '🏀' : '🏎️'),
+        time: m.time, type: 'news',
+      }));
+    }
+  }
+
   if (currentNewsFilter !== 'all') {
-    filtered = allFeeds.filter(f => f.source === currentNewsFilter);
+    filtered = filtered.filter(f => f.source === currentNewsFilter);
   }
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div><div class="empty-text">暂无中文资讯</div><div class="empty-hint">数据每10分钟自动刷新</div></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📰</div><div class="empty-text">暂无赛事资讯</div><div class="empty-hint">赛事结束后会自动记录赛果</div></div>';
     return;
   }
 
@@ -254,15 +263,23 @@ function setupFutureFilters() {
 function renderFutureEvents() {
   const list = document.getElementById('futureEventList');
   let filtered = allFuture;
+
+  // 如果没有未来赛程数据，从 allMatches 中提取即将开始的赛事
+  if (filtered.length === 0 && allMatches.length > 0) {
+    filtered = allMatches.filter(m =>
+      m.status === '即将开始' || m.status === '未开始' || m.type === 'future'
+    );
+  }
+
   if (currentFutureFilter !== 'all') {
-    filtered = allFuture.filter(m => m.sport === currentFutureFilter);
+    filtered = filtered.filter(m => m.sport === currentFutureFilter);
   }
 
   // 按时间排序
   filtered.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">暂无未来赛程</div><div class="empty-hint">数据每30分钟自动刷新</div></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">暂无未来赛程</div><div class="empty-hint">电竞大赛日程已内置，数据每分钟自动刷新</div></div>';
     return;
   }
 
