@@ -421,43 +421,64 @@ async function fetchAllNews() {
 }
 
 async function fetchNewsSource(key, src, settings) {
-  try {
-    const url = buildUrl(src, settings);
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'zh-CN,zh;q=0.9',
-      }
-    });
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-
-    const text = await res.text();
-    const feeds = parseNews(text, src.parser, src);
-
-    // 关键词过滤
-    if (src.filter && src.filter.length > 0) {
-      const filtered = feeds.filter(f => 
-        src.filter.some(kw => f.title.includes(kw))
-      );
-      // 如果过滤后太少，保留前几条非过滤的
-      if (filtered.length < 5) {
-        return feeds.slice(0, 10);
-      }
-      return filtered;
-    }
-
-    return feeds.slice(0, 20);
-  } catch (err) {
-    console.warn(`[${src.name}] 爬取失败:`, err.message);
-    return [];
+  // 构建URL列表（主URL + 备用URL）
+  const urls = [buildUrl(src, key, settings)];
+  if (src.fallbackUrls && src.fallbackUrls.length > 0) {
+    src.fallbackUrls.forEach(fu => urls.push(fu));
   }
+
+  let lastError = null;
+  
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'zh-CN,zh;q=0.9',
+        }
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const text = await res.text();
+      const feeds = parseNews(text, src.parser, src);
+
+      // 如果是备用URL，记录一下
+      if (i > 0) {
+        console.log(`[${src.name}] 使用备用源 ${i} (${url}) 成功获取 ${feeds.length} 条`);
+      }
+
+      // 关键词过滤
+      if (src.filter && src.filter.length > 0) {
+        const filtered = feeds.filter(f => 
+          src.filter.some(kw => f.title.includes(kw))
+        );
+        if (filtered.length < 5) {
+          return feeds.slice(0, 10);
+        }
+        return filtered;
+      }
+
+      return feeds.slice(0, 20);
+    } catch (err) {
+      lastError = err;
+      if (i < urls.length - 1) {
+        console.warn(`[${src.name}] 源 ${i} 失败 (${url}), 尝试备用源...`);
+        // 短暂延迟后重试
+        await new Promise(r => setTimeout(r, 500));
+      }
+    }
+  }
+  
+  console.warn(`[${src.name}] 所有源均失败:`, lastError?.message);
+  return [];
 }
 
-function buildUrl(src, settings) {
+function buildUrl(src, key, settings) {
   let url = src.url;
   
   if (src.type === 'api' && src.params) {

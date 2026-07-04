@@ -62,6 +62,10 @@ const CONTENT_SOURCES = {
     icon: '💡',
     enabled: true,
     url: 'https://rsshub.app/zhihu/hot',
+    fallbackUrls: [
+      'https://rsshub.rssforever.com/zhihu/hot',
+      'https://feeds.feedburner.com/zhihu-hot',
+    ],
     method: 'GET',
     type: 'rss',
     parser: 'rss_generic',
@@ -74,6 +78,9 @@ const CONTENT_SOURCES = {
     icon: '🎮',
     enabled: false,
     url: 'https://rsshub.app/zhihu/topic/19551206',
+    fallbackUrls: [
+      'https://rsshub.rssforever.com/zhihu/topic/19551206',
+    ],
     method: 'GET',
     type: 'rss',
     parser: 'rss_generic',
@@ -88,6 +95,9 @@ const CONTENT_SOURCES = {
     icon: '📢',
     enabled: true,
     url: 'https://rsshub.app/weibo/search/hot',
+    fallbackUrls: [
+      'https://rsshub.rssforever.com/weibo/search/hot',
+    ],
     method: 'GET',
     type: 'rss',
     parser: 'rss_generic',
