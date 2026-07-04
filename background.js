@@ -1,7 +1,7 @@
 // ============================================================
-// 赛事实时播报 v2.0.6 - 赛果结论读取模式
-// 不爬取网页内容，仅读取赛果结论（data-attribute + 比分）
-// 来源：500.com（足球/篮球赛果） + TheSportsDB（F1） + 电竞静态日程
+// 赛事实时播报 v2.1.0 - 扩展版
+// 赛果结论读取模式 + 热度排名 + 60+赛事
+// 来源：500.com（足球/篮球） + TheSportsDB（F1/网球） + 电竞静态日程
 // ============================================================
 
 importScripts('data/leagues.js', 'data/esports_schedule.js');
@@ -19,13 +19,16 @@ const DEFAULT_SETTINGS = {
   voiceFinals: true,
   selectedLeagues: [],
   language: 'zh',
+  // 热度排序设置
+  hotSortEnabled: true,
+  hotMinTier: 'B', // 最低显示级别
 };
 
 // ============================================================
 // 安装 & 启动
 // ============================================================
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('[赛事播报 v2.0.6] 安装/更新:', details.reason);
+  console.log('[赛事播报 v2.1.0] 安装/更新:', details.reason);
   const { settings } = await chrome.storage.sync.get('settings');
   if (!settings) await chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
   setupAllAlarms();
@@ -44,8 +47,10 @@ function setupAllAlarms() {
   chrome.alarms.clearAll(() => {
     chrome.alarms.create('fetchScores', { periodInMinutes: 2 });
     chrome.alarms.create('fetchF1', { periodInMinutes: 15 });
+    chrome.alarms.create('fetchTennis', { periodInMinutes: 30 });
     chrome.alarms.create('cleanold', { periodInMinutes: 120 });
     chrome.alarms.create('yesterdaySummary', { when: getNextTime(8, 0), periodInMinutes: 1440 });
+    chrome.alarms.create('hotRanking', { periodInMinutes: 5 });
   });
 }
 
@@ -53,8 +58,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   switch (alarm.name) {
     case 'fetchScores': await fetchAllData(); break;
     case 'fetchF1': await fetchF1Data(); break;
+    case 'fetchTennis': await fetchTennisData(); break;
     case 'cleanold': cleanOldData(); break;
     case 'yesterdaySummary': await generateYesterdaySummary(); break;
+    case 'hotRanking': await updateHotRanking(); break;
   }
 });
 
@@ -72,6 +79,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'clearHistory': chrome.storage.local.set({ matchHistory: {} }).then(() => sendResponse({ ok: true })); return true;
     case 'getYesterdaySummary': getYesterdaySummaryCache().then(r => sendResponse(r)); return true;
     case 'toggleVoice': toggleVoice().then(r => sendResponse(r)); return true;
+    case 'getHotRanking': getHotRanking().then(r => sendResponse(r)); return true;
   }
 });
 
@@ -118,17 +126,29 @@ async function fetch500Results(url, sport) {
         status = '已结束';
       }
 
-      // 只保留用户关注的赛事
-      if (sport === 'football' && !isWantedLeague(league, ['世界杯', 'World Cup'])) continue;
-      if (sport === 'basketball' && !isWantedLeague(league, ['NBA'])) continue;
+      // 过滤：只保留我们定义的联赛（根据关键词匹配）
+      const leagueInfo = matchLeague(league, sport);
+      if (!leagueInfo) continue;
+
+      // 计算热度
+      const hotScore = calculateHotScore(leagueInfo.popularity, status, score);
 
       results.push({
-        id: `500-${sport}-${results.length}`,
-        league, time: matchTime, home: homeTeam, away: awayTeam, score, status,
+        id: `500-${sport}-${results.length}-${homeTeam}-${awayTeam}`,
+        league: leagueInfo.name || league,
+        leagueId: leagueInfo.id,
+        time: matchTime,
+        home: homeTeam,
+        away: awayTeam,
+        score,
+        status,
         detailUrl: url,
         source: '500彩票网',
         sport,
         type: status === '已结束' ? 'result' : 'live',
+        popularity: leagueInfo.popularity || 50,
+        tier: leagueInfo.tier || 'B',
+        hotScore,
       });
     }
 
@@ -140,9 +160,17 @@ async function fetch500Results(url, sport) {
   }
 }
 
-/** 检查联赛名是否匹配目标关键词 */
-function isWantedLeague(league, keywords) {
-  return keywords.some(kw => league.includes(kw));
+/**
+ * 匹配联赛定义（根据联赛名找到对应的league配置）
+ */
+function matchLeague(leagueName, sport) {
+  const leagues = LEAGUES[sport] || [];
+  for (const l of leagues) {
+    if (l.keywords.some(kw => leagueName.includes(kw))) {
+      return l;
+    }
+  }
+  return null;
 }
 
 // ============================================================
@@ -155,25 +183,36 @@ async function fetchF1Data() {
     const data = await res.json();
     if (!data.events) return [];
 
-    const f1 = data.events.filter(e => (e.strLeague || '').toLowerCase().includes('formula'));
-    const results = f1.map(evt => {
+    const results = [];
+    for (const evt of data.events) {
+      const leagueName = evt.strLeague || '';
+      const leagueInfo = matchLeague(leagueName, 'motorsport');
+      if (!leagueInfo) continue;
+
       const hasResult = evt.intHomeScore != null;
-      return {
+      const score = hasResult ? `${evt.intHomeScore} - ${evt.intAwayScore}` : 'vs';
+      const status = hasResult ? '已结束' : (evt.strStatus || '未开始');
+
+      results.push({
         id: `f1-${evt.idEvent}`,
-        league: 'F1',
+        league: leagueInfo.name,
+        leagueId: leagueInfo.id,
         home: evt.strEvent || evt.strHomeTeam || '',
         away: evt.strAwayTeam || '',
-        score: hasResult ? `${evt.intHomeScore} - ${evt.intAwayScore}` : 'vs',
-        status: hasResult ? '已结束' : (evt.strStatus || '未开始'),
+        score,
+        status,
         time: evt.strTimestamp || evt.dateEvent || '',
         detailUrl: `https://www.thesportsdb.com/event/${evt.idEvent}`,
         source: 'TheSportsDB',
         sport: 'motorsport',
         type: hasResult ? 'result' : 'live',
-      };
-    });
+        popularity: leagueInfo.popularity || 60,
+        tier: leagueInfo.tier || 'B',
+        hotScore: calculateHotScore(leagueInfo.popularity, status, score),
+      });
+    }
 
-    console.log('[F1] 赛果:', results.filter(r => r.type === 'result').length, '场, 未开始:', results.filter(r => r.type === 'live').length, '场');
+    console.log('[F1/赛车] 赛果:', results.filter(r => r.type === 'result').length, '场, 未开始:', results.filter(r => r.type === 'live').length, '场');
 
     await chrome.storage.local.set({ f1Data: results });
     return results;
@@ -184,24 +223,154 @@ async function fetchF1Data() {
 }
 
 // ============================================================
+// 网球数据：TheSportsDB
+// ============================================================
+async function fetchTennisData() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${today}&s=Tennis`);
+    const data = await res.json();
+    if (!data.events) return [];
+
+    const results = [];
+    for (const evt of data.events) {
+      const leagueName = evt.strLeague || evt.strEvent || '';
+      const leagueInfo = matchLeague(leagueName, 'tennis');
+      if (!leagueInfo) continue;
+
+      const hasResult = evt.intHomeScore != null;
+      const score = hasResult ? `${evt.intHomeScore} - ${evt.intAwayScore}` : 'vs';
+      const status = hasResult ? '已结束' : (evt.strStatus || '未开始');
+
+      results.push({
+        id: `tennis-${evt.idEvent}`,
+        league: leagueInfo.name,
+        leagueId: leagueInfo.id,
+        home: evt.strHomeTeam || '',
+        away: evt.strAwayTeam || '',
+        score,
+        status,
+        time: evt.strTimestamp || evt.dateEvent || '',
+        detailUrl: `https://www.thesportsdb.com/event/${evt.idEvent}`,
+        source: 'TheSportsDB',
+        sport: 'tennis',
+        type: hasResult ? 'result' : 'live',
+        popularity: leagueInfo.popularity || 60,
+        tier: leagueInfo.tier || 'B',
+        hotScore: calculateHotScore(leagueInfo.popularity, status, score),
+      });
+    }
+
+    console.log('[网球] 赛果:', results.filter(r => r.type === 'result').length, '场, 未开始:', results.filter(r => r.type === 'live').length, '场');
+
+    await chrome.storage.local.set({ tennisData: results });
+    return results;
+  } catch (err) {
+    console.warn('[网球] 失败:', err.message);
+    return [];
+  }
+}
+
+// ============================================================
 // 电竞日程（静态数据，读取内置赛程结论）
 // ============================================================
 function getEsportsCards() {
-  return getActiveEsportsEvents().map(evt => ({
-    id: evt.id,
-    league: evt.league,
-    game: evt.game,
-    home: evt.league,
-    away: evt.status,
-    score: evt.status === '进行中' ? '进行中' : (evt.status === '即将开始' ? '即将开始' : evt.status),
-    status: evt.status,
-    time: evt.startDate,
-    detailUrl: evt.detailUrl,
-    source: '电竞日程',
-    sport: 'esports',
-    type: 'live',
-    info: evt.info || '',
-  }));
+  return getActiveEsportsEvents().map(evt => {
+    const leagueInfo = matchLeague(evt.league, 'esports') || { popularity: 50, tier: 'B', name: evt.league, id: '' };
+    const hotScore = calculateHotScore(leagueInfo.popularity || 50, evt.status, '');
+    return {
+      id: evt.id,
+      league: evt.league,
+      leagueId: leagueInfo.id,
+      game: evt.game,
+      home: evt.league,
+      away: evt.status,
+      score: evt.status === '进行中' ? '进行中' : (evt.status === '即将开始' ? '即将开始' : evt.status),
+      status: evt.status,
+      time: evt.startDate,
+      detailUrl: evt.detailUrl,
+      source: '电竞日程',
+      sport: 'esports',
+      type: 'live',
+      info: evt.info || '',
+      popularity: leagueInfo.popularity || 50,
+      tier: leagueInfo.tier || 'B',
+      hotScore,
+    };
+  });
+}
+
+// ============================================================
+// 热度计算
+// ============================================================
+function calculateHotScore(basePopularity, status, score) {
+  let score_val = basePopularity || 50;
+
+  // 状态加成
+  if (status === '进行中' || status === 'Live' || (status && status.includes('H') && !status.includes('FT'))) {
+    score_val += 30; // 进行中的比赛热度+30
+  } else if (status === '已结束' || status === 'FT' || status === 'Finished') {
+    // 刚结束的比赛（2小时内）热度加成
+    score_val += 10;
+  } else if (status === '即将开始') {
+    score_val += 15; // 即将开始的比赛热度+15
+  }
+
+  // 比分激烈程度加成（足球篮球类）
+  if (score && score !== 'vs') {
+    const parts = score.split('-').map(s => parseInt(s.trim()));
+    if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      const total = parts[0] + parts[1];
+      const diff = Math.abs(parts[0] - parts[1]);
+      // 总得分高加成
+      if (total >= 5) score_val += 10;
+      else if (total >= 3) score_val += 5;
+      // 分差小（胶着）加成
+      if (diff <= 1) score_val += 10;
+      else if (diff <= 3) score_val += 5;
+    }
+  }
+
+  return Math.min(100, Math.round(score_val));
+}
+
+// ============================================================
+// 热度排名
+// ============================================================
+async function updateHotRanking() {
+  const { liveMatches } = await chrome.storage.local.get('liveMatches');
+  const matches = liveMatches || [];
+  if (matches.length === 0) return;
+
+  // 按热度排序
+  const sorted = [...matches].sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0));
+
+  // 分类排名
+  const bySport = {};
+  for (const m of sorted) {
+    const s = m.sport || 'other';
+    if (!bySport[s]) bySport[s] = [];
+    if (bySport[s].length < 10) bySport[s].push(m);
+  }
+
+  const ranking = {
+    top20: sorted.slice(0, 20),
+    bySport,
+    updateTime: Date.now(),
+  };
+
+  await chrome.storage.local.set({ hotRanking: ranking });
+  return ranking;
+}
+
+async function getHotRanking() {
+  const { hotRanking, liveMatches } = await chrome.storage.local.get(['hotRanking', 'liveMatches']);
+
+  // 如果没有缓存或缓存超过5分钟，重新计算
+  if (!hotRanking || Date.now() - (hotRanking.updateTime || 0) > 300000) {
+    return await updateHotRanking();
+  }
+  return hotRanking;
 }
 
 // ============================================================
@@ -210,17 +379,19 @@ function getEsportsCards() {
 async function fetchAllData() {
   console.log('[fetchAllData] 开始读取赛果结论...');
 
-  const [football, basketball, f1Cached, esportsCards] = await Promise.all([
+  const [football, basketball, f1Cached, tennisCached, esportsCards] = await Promise.all([
     fetch500Results('https://trade.500.com/jczq/', 'football'),
     fetch500Results('https://trade.500.com/jclq/', 'basketball'),
     chrome.storage.local.get('f1Data').then(d => d.f1Data || []),
+    chrome.storage.local.get('tennisData').then(d => d.tennisData || []),
     Promise.resolve(getEsportsCards()),
   ]);
 
-  // 同时异步拉取最新F1数据（不阻塞主流程）
+  // 同时异步拉取最新F1和网球数据（不阻塞主流程）
   fetchF1Data();
+  fetchTennisData();
 
-  let allMatches = [...football, ...basketball, ...f1Cached, ...esportsCards];
+  let allMatches = [...football, ...basketball, ...f1Cached, ...tennisCached, ...esportsCards];
 
   // 联赛过滤
   const { settings } = await chrome.storage.sync.get('settings');
@@ -237,11 +408,19 @@ async function fetchAllData() {
     });
   }
 
+  // 按热度排序（如果开启）
+  if (s.hotSortEnabled !== false) {
+    allMatches.sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0));
+  }
+
   console.log('[fetchAllData] 赛果结论:', allMatches.filter(m => m.type === 'result').length, '场, 未开始/进行中:', allMatches.filter(m => m.type !== 'result').length, '场');
 
   // 写入存储
   const oldData = (await chrome.storage.local.get('liveMatches')).liveMatches || [];
   await chrome.storage.local.set({ liveMatches: allMatches, lastUpdate: Date.now() });
+
+  // 更新热度排名
+  await updateHotRanking();
 
   // 已结束的存入历史
   const finished = allMatches.filter(m => m.type === 'result');
@@ -264,7 +443,9 @@ function detectChanges(oldData, newData, settings) {
     chrome.action.setBadgeText({ text: String(Math.min(changes.length, 99)) });
     chrome.action.setBadgeBackgroundColor({ color: '#3fb950' });
 
-    for (const match of changes) {
+    // 只对高热度比赛发送通知
+    const highPriority = changes.filter(m => (m.hotScore || 0) >= 70);
+    for (const match of highPriority.slice(0, 5)) {
       if (match.type === 'result' && match.status === '已结束' && settings.notifyFinal) {
         notifyMatch(match, 'final');
       }
@@ -300,7 +481,7 @@ async function searchHistory(query, startDate, endDate) {
     const q = query.toLowerCase();
     results = results.filter(m => (m.league + m.home + m.away + (m.game || '')).toLowerCase().includes(q));
   }
-  results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  results.sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0));
   return { results: results.slice(0, 200), total: results.length };
 }
 
@@ -325,7 +506,11 @@ async function toggleFavorite(leagueId) {
 // ============================================================
 function notifyMatch(match, type) {
   const gameLabel = match.game ? `[${match.game}] ` : '';
-  const sportIcon = match.sport === 'football' ? '⚽' : (match.sport === 'basketball' ? '🏀' : (match.sport === 'motorsport' ? '🏎️' : '🎮'));
+  const sportIcon = match.sport === 'football' ? '⚽' :
+                   match.sport === 'basketball' ? '🏀' :
+                   match.sport === 'motorsport' ? '🏎️' :
+                   match.sport === 'tennis' ? '🎾' :
+                   match.sport === 'tabletennis' ? '🏓' : '🎮';
   const title = type === 'final' ? `${sportIcon} 赛果` : `${sportIcon} 赛事更新`;
 
   chrome.notifications.create(`match-${match.id}-${type}`, {
@@ -399,12 +584,15 @@ async function generateYesterdaySummary() {
     if (m.score && m.score !== 'vs') {
       const parts = m.score.split('-').map(Number);
       if (parts.length === 2 && parts[0] + parts[1] >= 4) {
-        highlights.push({ match: `${m.home} ${m.score} ${m.away}`, league: m.league || '' });
+        highlights.push({ match: `${m.home} ${m.score} ${m.away}`, league: m.league || '', hotScore: m.hotScore || 0 });
       }
     }
   });
 
-  const sportNames = { football: '足球', basketball: '篮球', motorsport: 'F1', esports: '电竞' };
+  // 高光比赛按热度排序
+  highlights.sort((a, b) => b.hotScore - a.hotScore);
+
+  const sportNames = { football: '足球', basketball: '篮球', motorsport: '赛车', esports: '电竞', tennis: '网球', tabletennis: '乒乓球' };
   const sportParts = Object.entries(bySport).map(([k, v]) => `${sportNames[k] || k}${v.count}场`);
 
   const summary = {

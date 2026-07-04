@@ -18,7 +18,8 @@
 
 <!-- Main Tabs -->
 <nav class="main-tabs">
-  <button class="main-tab active" data-tab="live">实时赛事</button>
+  <button class="main-tab active" data-tab="hot">🔥 热度</button>
+  <button class="main-tab" data-tab="live">实时赛事</button>
   <button class="main-tab" data-tab="news">中文资讯</button>
   <button class="main-tab" data-tab="future">未来赛程</button>
   <button class="main-tab" data-tab="history">历史搜索</button>
@@ -26,13 +27,27 @@
   <button class="main-tab" data-tab="summary">昨日总结</button>
 </nav>
 
+<!-- ========== Tab 0: 热度排名 ========== -->
+<section class="tab-content active" id="tab-hot">
+  <div class="filter-bar">
+    <button class="filter-btn active" data-hot="all">全部</button>
+    <button class="filter-btn" data-hot="football">⚽ 足球</button>
+    <button class="filter-btn" data-hot="basketball">🏀 篮球</button>
+    <button class="filter-btn" data-hot="esports">🎮 电竞</button>
+    <button class="filter-btn" data-hot="motorsport">🏎️ 赛车</button>
+    <button class="filter-btn" data-hot="tennis">🎾 网球</button>
+  </div>
+  <div id="hotRankingList"></div>
+</section>
+
 <!-- ========== Tab 1: 实时赛事 ========== -->
-<section class="tab-content active" id="tab-live">
+<section class="tab-content" id="tab-live">
   <div class="filter-bar">
     <button class="filter-btn active" data-sport="all">全部</button>
-    <button class="filter-btn" data-sport="football">⚽ 世界杯</button>
-    <button class="filter-btn" data-sport="basketball">🏀 NBA</button>
-    <button class="filter-btn" data-sport="motorsport">🏎️ F1</button>
+    <button class="filter-btn" data-sport="football">⚽ 足球</button>
+    <button class="filter-btn" data-sport="basketball">🏀 篮球</button>
+    <button class="filter-btn" data-sport="motorsport">🏎️ 赛车</button>
+    <button class="filter-btn" data-sport="tennis">🎾 网球</button>
     <button class="filter-btn" data-sport="esports">🎮 电竞</button>
   </div>
   <div id="liveScoreList"></div>
@@ -56,6 +71,7 @@
     <button class="filter-btn active" data-sport="all">全部</button>
     <button class="filter-btn" data-sport="football">足球</button>
     <button class="filter-btn" data-sport="esports">电竞</button>
+    <button class="filter-btn" data-sport="tennis">网球</button>
   </div>
   <div id="futureEventList"></div>
 </section>

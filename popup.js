@@ -1,27 +1,29 @@
 // ============================================================
-// 赛事实时播报 v2.0.6 - 赛果结论读取模式
-// 精简版：世界杯 | NBA | F1 | LOL/MSI/S赛 | 瓦罗兰特 | CS2
+// 赛事实时播报 v2.1.0 - 扩展版
+// 60+赛事 · 热度排名 · 赛果结论读取
 // ============================================================
 
-let currentTab = 'live';
+let currentTab = 'hot';
 let currentLiveFilter = 'all';
+let currentHotFilter = 'all';
 let currentNewsFilter = 'all';
 let currentFutureFilter = 'all';
 let allMatches = [];
 let allFeeds = [];
 let allFuture = [];
+let hotRanking = null;
 let favorites = [];
 let yesterdaySummary = null;
 let voiceEnabled = false;
-let allLeagues = [];  // 从background获取的联赛列表
+let allLeagues = [];
 
 // ============================================================
 // 初始化
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
-  // 关键：storage 监听器必须在数据加载前注册，否则会错过 background 写入事件
   setupStorageListener();
   setupTabSwitching();
+  setupHotFilters();
   setupLiveFilters();
   setupNewsFilters();
   setupFutureFilters();
@@ -32,12 +34,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupSummaryTab();
   setupCardClicks();
 
-  // 加载联赛数据（用于收藏等）
   loadLeagues();
   await loadAllCachedData();
   loadFavorites();
   loadVoiceState();
   loadYesterdaySummary();
+  loadHotRanking();
 });
 
 // ============================================================
@@ -47,25 +49,25 @@ async function loadAllCachedData() {
   const data = await chrome.storage.local.get([
     'liveMatches', 'lastUpdate',
     'contentFeeds', 'contentLastUpdate',
-    'futureEvents', 'futureLastUpdate'
+    'futureEvents', 'futureLastUpdate',
+    'hotRanking',
   ]);
   allMatches = data.liveMatches || [];
   allFeeds = data.contentFeeds || [];
   allFuture = data.futureEvents || [];
+  hotRanking = data.hotRanking || null;
 
   updateTime(data.lastUpdate);
 
-  // 如果没有任何数据，主动触发后台刷新
   if (allMatches.length === 0 && allFeeds.length === 0 && allFuture.length === 0) {
+    showLoading('hot');
     showLoading('live');
     showLoading('news');
     showLoading('future');
-    // 触发后台拉取数据
     chrome.runtime.sendMessage({ type: 'refreshNow' });
-
-    // 轮询等待数据到达（最多等15秒，每2秒检查一次）
     pollForData(0);
   } else {
+    renderHotRanking();
     renderLiveMatches();
     renderNewsFeeds();
     renderFutureEvents();
@@ -74,18 +76,16 @@ async function loadAllCachedData() {
 
 function pollForData(attempt) {
   if (attempt >= 8) {
-    // 15秒后仍未收到数据，显示超时提示
-    ['liveScoreList', 'newsFeedList', 'futureEventList'].forEach(id => {
+    ['hotRankingList', 'liveScoreList', 'newsFeedList', 'futureEventList'].forEach(id => {
       const el = document.getElementById(id);
       if (el && el.querySelector('.loading')) {
         el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">数据加载超时</div><div class="empty-hint">请检查网络连接后 <button class="retry-btn" id="retryBtn">点击重试</button></div></div>';
       }
     });
-    // 绑定重试按钮
     setTimeout(() => {
       const btn = document.getElementById('retryBtn');
       if (btn) btn.addEventListener('click', () => {
-        showLoading('live'); showLoading('news'); showLoading('future');
+        showLoading('hot'); showLoading('live'); showLoading('news'); showLoading('future');
         chrome.runtime.sendMessage({ type: 'refreshNow' });
         pollForData(0);
       });
@@ -94,16 +94,17 @@ function pollForData(attempt) {
   }
 
   setTimeout(async () => {
-    // 如果数据已经通过 storage 监听器到达，不再轮询
     if (allMatches.length > 0 || allFeeds.length > 0 || allFuture.length > 0) return;
 
-    const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate']);
+    const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate', 'hotRanking']);
     allMatches = data.liveMatches || [];
     allFeeds = data.contentFeeds || [];
     allFuture = data.futureEvents || [];
+    hotRanking = data.hotRanking || null;
     updateTime(data.lastUpdate);
 
     if (allMatches.length > 0 || allFeeds.length > 0 || allFuture.length > 0) {
+      renderHotRanking();
       renderLiveMatches();
       renderNewsFeeds();
       renderFutureEvents();
@@ -114,7 +115,7 @@ function pollForData(attempt) {
 }
 
 function showLoading(tab) {
-  const map = { live: 'liveScoreList', news: 'newsFeedList', future: 'futureEventList' };
+  const map = { hot: 'hotRankingList', live: 'liveScoreList', news: 'newsFeedList', future: 'futureEventList' };
   const el = document.getElementById(map[tab]);
   if (el) el.innerHTML = '<div class="loading">正在获取赛事数据</div>';
 }
@@ -130,10 +131,110 @@ function setupTabSwitching() {
       tab.classList.add('active');
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.getElementById(`tab-${currentTab}`).classList.add('active');
-
       updateFooterInfo();
     });
   });
+}
+
+// ============================================================
+// 热度排名
+// ============================================================
+function setupHotFilters() {
+  document.querySelectorAll('#tab-hot .filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentHotFilter = btn.dataset.hot;
+      document.querySelectorAll('#tab-hot .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderHotRanking();
+    });
+  });
+}
+
+function loadHotRanking() {
+  chrome.runtime.sendMessage({ type: 'getHotRanking' }, (resp) => {
+    if (resp?.top20) {
+      hotRanking = resp;
+      if (currentTab === 'hot') renderHotRanking();
+    }
+  });
+}
+
+function renderHotRanking() {
+  const list = document.getElementById('hotRankingList');
+  let items = [];
+
+  if (hotRanking?.top20) {
+    if (currentHotFilter === 'all') {
+      items = hotRanking.top20;
+    } else {
+      items = (hotRanking.bySport?.[currentHotFilter]) || [];
+    }
+  }
+
+  // 如果没有缓存的排名数据，从 allMatches 生成
+  if (items.length === 0 && allMatches.length > 0) {
+    let filtered = allMatches;
+    if (currentHotFilter !== 'all') {
+      filtered = allMatches.filter(m => m.sport === currentHotFilter);
+    }
+    items = [...filtered].sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0)).slice(0, 20);
+  }
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🔥</div><div class="empty-text">暂无热度数据</div><div class="empty-hint">数据每5分钟更新，赛事进行时热度更高</div></div>';
+    updateFooterInfo();
+    return;
+  }
+
+  list.innerHTML = items.map((m, idx) => renderHotCard(m, idx + 1)).join('');
+  updateFooterInfo();
+}
+
+function renderHotCard(m, rank) {
+  const gameTag = m.game ? `<span class="game-tag">${m.game}</span>` : '';
+  const isLive = m.status === '进行中' || m.status === 'Live' || (m.status && m.status.includes('H') && !m.status.includes('FT'));
+  const isFinished = m.status === '已结束' || m.status === 'FT' || m.status === 'Finished';
+  const isFuture = m.type === 'future' || m.status === '未开始' || m.status === 'Not Started' || m.status === '即将开始';
+  const statusClass = isLive ? 'live' : (isFinished ? 'ft' : 'upcoming');
+  const statusLabel = isLive ? 'LIVE' : (isFinished ? '完赛' : (m.status || '未开始'));
+  const cardClass = isLive ? 'live' : (isFinished ? 'finished' : (isFuture ? 'future' : ''));
+
+  // 热度条颜色
+  const hot = m.hotScore || 0;
+  let hotColor = '#3fb950';
+  if (hot >= 90) hotColor = '#f85149';
+  else if (hot >= 75) hotColor = '#d29922';
+  else if (hot >= 60) hotColor = '#58a6ff';
+
+  // 排名徽章
+  let rankBadge = '';
+  if (rank <= 3) {
+    const medalEmoji = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
+    rankBadge = `<span class="rank-badge top${rank}">${medalEmoji}</span>`;
+  } else {
+    rankBadge = `<span class="rank-badge">${rank}</span>`;
+  }
+
+  return `
+    <div class="match-card hot-card ${cardClass}" data-url="${m.detailUrl || '#'}">
+      ${rankBadge}
+      <div class="hot-score-bar" style="background: ${hotColor}22;">
+        <div class="hot-score-fill" style="width: ${hot}%; background: ${hotColor};"></div>
+      </div>
+      <div class="match-header">
+        <span class="league">${gameTag}${m.league || '未知赛事'}</span>
+        <span class="status-badge ${statusClass}">${statusLabel}</span>
+      </div>
+      <div class="match-body">
+        <span class="team home">${m.home || '--'}</span>
+        <span class="score ${isLive ? 'live' : ''}">${m.score || 'vs'}</span>
+        <span class="team away">${m.away || '--'}</span>
+      </div>
+      <div class="match-footer">
+        <span>${m.time || ''} · <span class="source-tag">${m.source || ''}</span></span>
+        <span class="hot-score-text" style="color:${hotColor}">🔥 ${hot}</span>
+      </div>
+    </div>`;
 }
 
 // ============================================================
@@ -159,7 +260,7 @@ function renderLiveMatches() {
   }
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">暂无赛事数据</div><div class="empty-hint">数据每30秒自动刷新，或点击 ↻ 手动刷新</div></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">暂无赛事数据</div><div class="empty-hint">数据每2分钟自动刷新，或点击 ↻ 手动刷新</div></div>';
     updateFooterInfo();
     return;
   }
@@ -172,16 +273,25 @@ function renderMatchCard(m) {
   const gameTag = m.game ? `<span class="game-tag">${m.game}</span>` : '';
   const isLive = m.status === '进行中' || m.status === 'Live' || (m.status && m.status.includes('H') && !m.status.includes('FT'));
   const isFinished = m.status === '已结束' || m.status === 'FT' || m.status === 'Finished';
-  const isFuture = m.type === 'future' || m.status === '未开始' || m.status === 'Not Started';
+  const isFuture = m.type === 'future' || m.status === '未开始' || m.status === 'Not Started' || m.status === '即将开始';
   const statusClass = isLive ? 'live' : (isFinished ? 'ft' : 'upcoming');
   const statusLabel = isLive ? 'LIVE' : (isFinished ? '完赛' : (m.status || '未开始'));
   const cardClass = isLive ? 'live' : (isFinished ? 'finished' : (isFuture ? 'future' : ''));
   const isFav = favorites.includes(m.leagueId || '');
 
+  // 热度显示
+  const hot = m.hotScore || 0;
+  let hotBadge = '';
+  if (hot >= 85) {
+    hotBadge = `<span class="hot-badge hot-high">🔥</span>`;
+  } else if (hot >= 70) {
+    hotBadge = `<span class="hot-badge hot-mid">🔥</span>`;
+  }
+
   return `
     <div class="match-card ${cardClass}" data-url="${m.detailUrl || '#'}">
       <div class="match-header">
-        <span class="league">${gameTag}${m.league || '未知赛事'}</span>
+        <span class="league">${gameTag}${m.league || '未知赛事'} ${hotBadge}</span>
         <span class="status-badge ${statusClass}">${statusLabel}</span>
       </div>
       <div class="match-body">
@@ -220,8 +330,8 @@ function renderNewsFeeds() {
     if (finished.length > 0) {
       filtered = finished.slice(0, 20).map(m => ({
         id: `news-${m.id}`, title: `${m.league}：${m.home} ${m.score} ${m.away}`,
-        url: m.detailUrl || '#', source: m.source, sourceIcon: m.sport === 'football' ? '⚽' : (m.sport === 'basketball' ? '🏀' : '🏎️'),
-        time: m.time, type: 'news',
+        url: m.detailUrl || '#', source: m.source, sourceIcon: getSportIcon(m.sport),
+        time: m.time, type: 'news', hotScore: m.hotScore || 0,
       }));
     }
   }
@@ -240,10 +350,15 @@ function renderNewsFeeds() {
       <div class="news-title">${f.title}</div>
       <div class="news-meta">
         <span class="news-source">${f.sourceIcon || ''} ${f.source}</span>
-        <span>${f.hot ? '热度 ' + f.hot : formatTime(f.time)}</span>
+        <span>${f.hotScore ? '🔥 ' + f.hotScore : formatTime(f.time)}</span>
       </div>
     </div>
   `).join('');
+}
+
+function getSportIcon(sport) {
+  const map = { football: '⚽', basketball: '🏀', motorsport: '🏎️', tennis: '🎾', tabletennis: '🏓', esports: '🎮' };
+  return map[sport] || '📰';
 }
 
 // ============================================================
@@ -275,8 +390,8 @@ function renderFutureEvents() {
     filtered = filtered.filter(m => m.sport === currentFutureFilter);
   }
 
-  // 按时间排序
-  filtered.sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  // 按热度排序
+  filtered.sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0));
 
   if (filtered.length === 0) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">📅</div><div class="empty-text">暂无未来赛程</div><div class="empty-hint">电竞大赛日程已内置，数据每分钟自动刷新</div></div>';
@@ -407,18 +522,18 @@ function renderFavorites() {
   list.innerHTML = favorites.map(id => {
     const league = findLeagueById(id);
     if (!league) return '';
+    const tierBadge = league.tier ? `<span class="tier-badge tier-${league.tier}">${league.tier}</span>` : '';
     return `
       <div class="fav-card">
         <div class="fav-info">
-          <div class="fav-name">${league.name}</div>
-          <div class="fav-meta">${league.game ? league.game + ' · ' : ''}${league.region || ''}</div>
+          <div class="fav-name">${league.name} ${tierBadge}</div>
+          <div class="fav-meta">${league.game ? league.game + ' · ' : ''}热度 ${league.popularity || 50}</div>
         </div>
         <button class="fav-btn" data-id="${id}">取消收藏</button>
       </div>
     `;
   }).join('');
 
-  // 取消收藏按钮
   list.querySelectorAll('.fav-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
@@ -435,22 +550,22 @@ function renderFavorites() {
 // ============================================================
 function setupRefresh() {
   document.getElementById('refreshBtn').addEventListener('click', async () => {
-    const tabs = ['liveScoreList', 'newsFeedList', 'futureEventList'];
+    const tabs = ['hotRankingList', 'liveScoreList', 'newsFeedList', 'futureEventList'];
     tabs.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.innerHTML = '<div class="loading">刷新中</div>';
     });
 
-    // 发送刷新请求，storage 监听器会自动更新 UI
     chrome.runtime.sendMessage({ type: 'refreshNow' }, (resp) => {
-      // 如果后台没有正常返回，2秒后手动重新加载
       if (!resp || !resp.ok) {
         setTimeout(async () => {
-          const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate']);
+          const data = await chrome.storage.local.get(['liveMatches', 'contentFeeds', 'futureEvents', 'lastUpdate', 'hotRanking']);
           allMatches = data.liveMatches || [];
           allFeeds = data.contentFeeds || [];
           allFuture = data.futureEvents || [];
+          hotRanking = data.hotRanking || null;
           updateTime(data.lastUpdate);
+          renderHotRanking();
           renderLiveMatches();
           renderNewsFeeds();
           renderFutureEvents();
@@ -475,6 +590,7 @@ function setupStorageListener() {
       if (changes.liveMatches) {
         allMatches = changes.liveMatches.newValue || [];
         if (currentTab === 'live') renderLiveMatches();
+        if (currentTab === 'hot') renderHotRanking();
       }
       if (changes.contentFeeds) {
         allFeeds = changes.contentFeeds.newValue || [];
@@ -485,6 +601,10 @@ function setupStorageListener() {
         if (currentTab === 'future') renderFutureEvents();
       }
       if (changes.lastUpdate) updateTime(changes.lastUpdate.newValue);
+      if (changes.hotRanking) {
+        hotRanking = changes.hotRanking.newValue || null;
+        if (currentTab === 'hot') renderHotRanking();
+      }
       if (changes.yesterdaySummary) {
         yesterdaySummary = changes.yesterdaySummary.newValue || null;
         if (currentTab === 'summary') renderYesterdaySummary();
@@ -524,6 +644,16 @@ function updateFooterInfo() {
   let label = '';
 
   switch (currentTab) {
+    case 'hot':
+      let hotFiltered = hotRanking?.top20 || allMatches;
+      if (currentHotFilter !== 'all' && hotRanking?.bySport) {
+        hotFiltered = hotRanking.bySport[currentHotFilter] || [];
+      } else if (currentHotFilter !== 'all') {
+        hotFiltered = allMatches.filter(m => m.sport === currentHotFilter);
+      }
+      count = Array.isArray(hotFiltered) ? hotFiltered.length : 0;
+      label = '场热门赛事';
+      break;
     case 'live':
       let filtered = allMatches;
       if (currentLiveFilter !== 'all') {
@@ -646,7 +776,7 @@ function renderYesterdaySummary() {
 
   if (yesterdaySummary.bySport && Object.keys(yesterdaySummary.bySport).length > 0) {
     html += '<div class="summary-stats">';
-    const sportNames = { football: '足球', basketball: '篮球', esports: '电竞' };
+    const sportNames = { football: '足球', basketball: '篮球', esports: '电竞', motorsport: '赛车', tennis: '网球', tabletennis: '乒乓球' };
     Object.entries(yesterdaySummary.bySport).forEach(([sport, data]) => {
       const name = sportNames[sport] || sport;
       html += `<div class="summary-stat-item"><span class="stat-num">${data.count}</span><span class="stat-label">${name}</span></div>`;

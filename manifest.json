@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "赛事实时播报",
-  "version": "2.0.6",
-  "description": "赛果结论读取 - 世界杯·NBA·F1·LOL电竞 - 中文赛果",
+  "version": "2.1.0",
+  "description": "60+赛事·热度排名·赛果结论读取 - 足球/篮球/赛车/网球/电竞",
   "permissions": ["storage", "alarms", "notifications", "tts"],
   "host_permissions": [
     "https://trade.500.com/*",

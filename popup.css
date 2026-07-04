@@ -474,3 +474,174 @@ footer {
 }
 .league-name { color: var(--ink); }
 .league-count { color: var(--muted); font-weight: 600; }
+
+/* ============================================================
+   热度排名样式
+   ============================================================ */
+.hot-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.hot-score-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: 100%;
+  transition: all 0.3s ease;
+}
+
+.hot-score-fill {
+  height: 100%;
+  transition: width 0.5s ease;
+  border-radius: 0 2px 2px 0;
+}
+
+.rank-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  z-index: 2;
+}
+
+.rank-badge.top1 {
+  background: linear-gradient(135deg, #ffd700, #ffb700);
+  color: #1a1a1a;
+  border: none;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+.rank-badge.top2 {
+  background: linear-gradient(135deg, #c0c0c0, #a0a0a0);
+  color: #1a1a1a;
+  border: none;
+}
+
+.rank-badge.top3 {
+  background: linear-gradient(135deg, #cd7f32, #b87333);
+  color: #fff;
+  border: none;
+}
+
+.hot-score-text {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.hot-badge {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  animation: hotPulse 1.5s ease-in-out infinite;
+}
+
+.hot-badge.hot-high { animation: hotPulse 1s ease-in-out infinite; }
+.hot-badge.hot-mid { opacity: 0.8; }
+
+@keyframes hotPulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+/* 赛事级别徽章 */
+.tier-badge {
+  display: inline-block;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
+.tier-badge.tier-S\+ {
+  background: linear-gradient(135deg, #f85149, #da3633);
+  color: #fff;
+}
+
+.tier-badge.tier-S {
+  background: linear-gradient(135deg, #d29922, #bb8009);
+  color: #fff;
+}
+
+.tier-badge.tier-A {
+  background: linear-gradient(135deg, #58a6ff, #1f6feb);
+  color: #fff;
+}
+
+.tier-badge.tier-B {
+  background: linear-gradient(135deg, #8b949e, #6e7681);
+  color: #fff;
+}
+
+.tier-badge.tier-C {
+  background: var(--rule);
+  color: var(--muted);
+}
+
+/* 主Tab滚动优化 */
+.main-tabs {
+  display: flex;
+  gap: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.main-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.main-tab {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.main-tab:hover {
+  color: var(--ink);
+}
+
+.main-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* 筛选栏滚动优化 */
+.filter-bar {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  flex-shrink: 0;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.filter-bar::-webkit-scrollbar {
+  display: none;
+}
