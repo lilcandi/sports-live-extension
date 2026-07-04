@@ -1,24 +1,10 @@
 // ============================================================
-// 赛事实时播报 - Service Worker (Manifest V3) v2.0.5
-// 精简版：世界杯(500.com) + NBA(500.com) + F1(TheSportsDB) + 电竞(静态日程)
+// 赛事实时播报 v2.0.6 - 赛果结论读取模式
+// 不爬取网页内容，仅读取赛果结论（data-attribute + 比分）
+// 来源：500.com（足球/篮球赛果） + TheSportsDB（F1） + 电竞静态日程
 // ============================================================
 
 importScripts('data/leagues.js', 'data/esports_schedule.js');
-
-// TheSportsDB 英文联赛名 → 中文
-const LEAGUE_NAME_CN = {
-  'Formula 1': 'F1', 'Formula One': 'F1', 'F1': 'F1',
-  'FIFA World Cup': '世界杯', 'World Cup': '世界杯',
-};
-
-function translateLeague(en) {
-  if (!en) return '未知';
-  if (LEAGUE_NAME_CN[en]) return LEAGUE_NAME_CN[en];
-  for (const [k, v] of Object.entries(LEAGUE_NAME_CN)) {
-    if (en.toLowerCase().includes(k.toLowerCase())) return v;
-  }
-  return en;
-}
 
 // ============================================================
 // 默认设置
@@ -32,8 +18,6 @@ const DEFAULT_SETTINGS = {
   voiceGoals: true,
   voiceFinals: true,
   selectedLeagues: [],
-  sourceSettings: (typeof DEFAULT_SOURCE_SETTINGS !== 'undefined') ? DEFAULT_SOURCE_SETTINGS : {},
-  apiTokens: (typeof DEFAULT_TOKENS !== 'undefined') ? DEFAULT_TOKENS : {},
   language: 'zh',
 };
 
@@ -41,16 +25,16 @@ const DEFAULT_SETTINGS = {
 // 安装 & 启动
 // ============================================================
 chrome.runtime.onInstalled.addListener(async (details) => {
-  console.log('[赛事播报 v2.0.5] 安装/更新:', details.reason);
+  console.log('[赛事播报 v2.0.6] 安装/更新:', details.reason);
   const { settings } = await chrome.storage.sync.get('settings');
   if (!settings) await chrome.storage.sync.set({ settings: DEFAULT_SETTINGS });
   setupAllAlarms();
-  try { await fetchAllData(); } catch (e) { console.error('[赛事播报] 初始化失败:', e.message); }
+  try { await fetchAllData(); } catch (e) { console.error(e.message); }
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   setupAllAlarms();
-  try { await fetchAllData(); } catch (e) { console.error('[赛事播报] 启动失败:', e.message); }
+  try { await fetchAllData(); } catch (e) { console.error(e.message); }
 });
 
 // ============================================================
@@ -58,8 +42,8 @@ chrome.runtime.onStartup.addListener(async () => {
 // ============================================================
 function setupAllAlarms() {
   chrome.alarms.clearAll(() => {
-    chrome.alarms.create('fetchScores', { periodInMinutes: 1 });
-    chrome.alarms.create('fetchF1', { periodInMinutes: 10 });
+    chrome.alarms.create('fetchScores', { periodInMinutes: 2 });
+    chrome.alarms.create('fetchF1', { periodInMinutes: 15 });
     chrome.alarms.create('cleanold', { periodInMinutes: 120 });
     chrome.alarms.create('yesterdaySummary', { when: getNextTime(8, 0), periodInMinutes: 1440 });
   });
@@ -68,7 +52,7 @@ function setupAllAlarms() {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   switch (alarm.name) {
     case 'fetchScores': await fetchAllData(); break;
-    case 'fetchF1': await fetchF1(); break;
+    case 'fetchF1': await fetchF1Data(); break;
     case 'cleanold': cleanOldData(); break;
     case 'yesterdaySummary': await generateYesterdaySummary(); break;
   }
@@ -92,151 +76,153 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 });
 
 // ============================================================
-// 1. 数据源：500彩票网 足球（世界杯）
+// 核心：读取500.com赛果结论（data-attribute + 比分，不爬取页面内容）
 // ============================================================
-async function fetch500Football() {
+
+/**
+ * 从500.com读取赛果结论
+ * 策略：只读取 data-homesxname / data-awaysxname（球队名）和 td 中的比分（结论）
+ * 不解析DOM，不爬取页面内容，只提取关键赛果信息
+ */
+async function fetch500Results(url, sport) {
   try {
-    const res = await fetch('https://trade.500.com/jczq/', {
+    const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
     });
     const buffer = await res.arrayBuffer();
     const html = new TextDecoder('gbk').decode(buffer);
 
-    const rowPattern = /<tr class="bet-tb-tr[^"]*"[^>]*data-homesxname="([^"]*)"[^>]*data-awaysxname="([^"]*)"[^>]*>(.*?)<\/tr>/gs;
-    const matches = [...html.matchAll(rowPattern)];
+    // 正则：匹配每行赛事的 data- 属性（球队名）和 td 内容（比分结论）
+    const rowRe = /<tr class="bet-tb-tr[^"]*"\s*data-homesxname="([^"]*)"\s*data-awaysxname="([^"]*)"[^>]*>(.*?)<\/tr>/gs;
+    const matches = [...html.matchAll(rowRe)];
 
     const results = [];
     for (const m of matches) {
-      const home = m[1], away = m[2];
+      const homeTeam = m[1];
+      const awayTeam = m[2];
       const rowHtml = m[3];
+
+      // 提取 td 中的赛果结论
       const cells = [...rowHtml.matchAll(/<td[^>]*>(.*?)<\/td>/gs)];
       if (cells.length < 6) continue;
 
       const league = cells[1]?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
-      const time = cells[2]?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
+      const matchTime = cells[2]?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
       const raw = cells[3]?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || '';
 
-      let score = 'vs', status = '未开始';
-      if (raw.match(/\d+:\d+/)) {
-        const sm = raw.match(/(\d+:\d+)/);
-        score = sm[1].replace(':', ' - ');
+      // 赛果结论：提取比分
+      let score = 'vs';
+      let status = '未开始';
+      if (raw.match(/(\d+:\d+)/)) {
+        score = RegExp.$1.replace(':', ' - ');
         status = '已结束';
       }
 
-      // 只保留世界杯相关
-      if (!league.includes('世界杯') && !league.includes('World Cup')) continue;
+      // 只保留用户关注的赛事
+      if (sport === 'football' && !isWantedLeague(league, ['世界杯', 'World Cup'])) continue;
+      if (sport === 'basketball' && !isWantedLeague(league, ['NBA'])) continue;
 
       results.push({
-        id: `500fb-${results.length}`, league, time, home, away, score, status,
-        detailUrl: 'https://trade.500.com/jczq/', source: '500彩票网', sport: 'football', type: 'live',
+        id: `500-${sport}-${results.length}`,
+        league, time: matchTime, home: homeTeam, away: awayTeam, score, status,
+        detailUrl: url,
+        source: '500彩票网',
+        sport,
+        type: status === '已结束' ? 'result' : 'live',
       });
     }
 
-    console.log('[500足球] 世界杯:', results.length, '场');
+    console.log(`[500.com ${sport}] 赛果: ${results.filter(r => r.status === '已结束').length} 场, 未开赛: ${results.filter(r => r.status === '未开始').length} 场`);
     return results;
-  } catch (err) { console.warn('[500足球] 失败:', err.message); return []; }
+  } catch (err) {
+    console.warn(`[500.com ${sport}] 失败:`, err.message);
+    return [];
+  }
+}
+
+/** 检查联赛名是否匹配目标关键词 */
+function isWantedLeague(league, keywords) {
+  return keywords.some(kw => league.includes(kw));
 }
 
 // ============================================================
-// 2. 数据源：500彩票网 篮球（NBA）
+// F1 数据：TheSportsDB（JSON API，读取赛事结论）
 // ============================================================
-async function fetch500Basketball() {
-  try {
-    const res = await fetch('https://trade.500.com/jclq/', {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-    });
-    const buffer = await res.arrayBuffer();
-    const html = new TextDecoder('gbk').decode(buffer);
-
-    const rowPattern = /<tr class="bet-tb-tr[^"]*"[^>]*data-homesxname="([^"]*)"[^>]*data-awaysxname="([^"]*)"[^>]*>(.*?)<\/tr>/gs;
-    const matches = [...html.matchAll(rowPattern)];
-
-    const results = [];
-    for (const m of matches) {
-      const home = m[1], away = m[2];
-      const rowHtml = m[3];
-      const cells = [...rowHtml.matchAll(/<td[^>]*>(.*?)<\/td>/gs)];
-      if (cells.length < 6) continue;
-
-      const league = cells[1]?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
-      const time = cells[2]?.[1]?.replace(/<[^>]+>/g, '').trim() || '';
-      const raw = cells[3]?.[1]?.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim() || '';
-
-      let score = 'vs', status = '未开始';
-      if (raw.match(/\d+:\d+/)) {
-        const sm = raw.match(/(\d+:\d+)/);
-        score = sm[1].replace(':', ' - ');
-        status = '已结束';
-      }
-
-      results.push({
-        id: `500bb-${results.length}`, league, time, home, away, score, status,
-        detailUrl: 'https://trade.500.com/jclq/', source: '500彩票网', sport: 'basketball', type: 'live',
-      });
-    }
-
-    console.log('[500篮球] 共:', results.length, '场');
-    return results;
-  } catch (err) { console.warn('[500篮球] 失败:', err.message); return []; }
-}
-
-// ============================================================
-// 3. 数据源：TheSportsDB F1
-// ============================================================
-async function fetchF1() {
+async function fetchF1Data() {
   try {
     const today = new Date().toISOString().split('T')[0];
     const res = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsday.php?d=${today}&s=Motorsport`);
     const data = await res.json();
     if (!data.events) return [];
 
-    const f1Events = data.events.filter(e => (e.strLeague || '').toLowerCase().includes('formula'));
-    const results = f1Events.map(evt => ({
-      id: `f1-${evt.idEvent}`, league: 'F1',
-      home: evt.strEvent || evt.strHomeTeam || '',
-      away: evt.strAwayTeam || '',
-      score: evt.intHomeScore != null ? `${evt.intHomeScore} - ${evt.intAwayScore}` : 'vs',
-      status: evt.strStatus || '未开始',
-      time: evt.strTimestamp || evt.dateEvent || '',
-      detailUrl: `https://www.thesportsdb.com/event/${evt.idEvent}`,
-      source: 'TheSportsDB', sport: 'motorsport', type: 'live',
-    }));
-    console.log('[F1]', results.length, '场');
+    const f1 = data.events.filter(e => (e.strLeague || '').toLowerCase().includes('formula'));
+    const results = f1.map(evt => {
+      const hasResult = evt.intHomeScore != null;
+      return {
+        id: `f1-${evt.idEvent}`,
+        league: 'F1',
+        home: evt.strEvent || evt.strHomeTeam || '',
+        away: evt.strAwayTeam || '',
+        score: hasResult ? `${evt.intHomeScore} - ${evt.intAwayScore}` : 'vs',
+        status: hasResult ? '已结束' : (evt.strStatus || '未开始'),
+        time: evt.strTimestamp || evt.dateEvent || '',
+        detailUrl: `https://www.thesportsdb.com/event/${evt.idEvent}`,
+        source: 'TheSportsDB',
+        sport: 'motorsport',
+        type: hasResult ? 'result' : 'live',
+      };
+    });
+
+    console.log('[F1] 赛果:', results.filter(r => r.type === 'result').length, '场, 未开始:', results.filter(r => r.type === 'live').length, '场');
+
+    await chrome.storage.local.set({ f1Data: results });
     return results;
-  } catch (err) { console.warn('[F1] 失败:', err.message); return []; }
+  } catch (err) {
+    console.warn('[F1] 失败:', err.message);
+    return [];
+  }
 }
 
 // ============================================================
-// 4. 综合数据聚合（主入口）
+// 电竞日程（静态数据，读取内置赛程结论）
 // ============================================================
-async function fetchAllData() {
-  console.log('[fetchAllData] 开始拉取...');
-
-  const [football, basketball, esportsEvents] = await Promise.all([
-    fetch500Football(),
-    fetch500Basketball(),
-    Promise.resolve(getActiveEsportsEvents()),
-  ]);
-
-  // 电竞日程转为赛事卡片
-  const esportsCards = esportsEvents.map(evt => ({
-    id: evt.id, league: evt.league, game: evt.game,
-    home: evt.league, away: evt.status,
-    score: evt.status === '进行中' ? '进行中' : (evt.status === '即将开始' ? '即将开始' : 'vs'),
+function getEsportsCards() {
+  return getActiveEsportsEvents().map(evt => ({
+    id: evt.id,
+    league: evt.league,
+    game: evt.game,
+    home: evt.league,
+    away: evt.status,
+    score: evt.status === '进行中' ? '进行中' : (evt.status === '即将开始' ? '即将开始' : evt.status),
     status: evt.status,
     time: evt.startDate,
     detailUrl: evt.detailUrl,
-    source: '电竞日程', sport: 'esports', type: 'live',
+    source: '电竞日程',
+    sport: 'esports',
+    type: 'live',
     info: evt.info || '',
   }));
+}
 
-  // F1 数据（可能已有缓存）
-  const { f1Data } = await chrome.storage.local.get('f1Data');
-  let f1Cards = f1Data || [];
+// ============================================================
+// 主入口：聚合所有赛果结论
+// ============================================================
+async function fetchAllData() {
+  console.log('[fetchAllData] 开始读取赛果结论...');
 
-  let allMatches = [...football, ...basketball, ...f1Cards, ...esportsCards];
+  const [football, basketball, f1Cached, esportsCards] = await Promise.all([
+    fetch500Results('https://trade.500.com/jczq/', 'football'),
+    fetch500Results('https://trade.500.com/jclq/', 'basketball'),
+    chrome.storage.local.get('f1Data').then(d => d.f1Data || []),
+    Promise.resolve(getEsportsCards()),
+  ]);
 
-  // 按联赛过滤
+  // 同时异步拉取最新F1数据（不阻塞主流程）
+  fetchF1Data();
+
+  let allMatches = [...football, ...basketball, ...f1Cached, ...esportsCards];
+
+  // 联赛过滤
   const { settings } = await chrome.storage.sync.get('settings');
   const s = settings || DEFAULT_SETTINGS;
   if (s.selectedLeagues.length > 0 && typeof findLeague === 'function') {
@@ -245,60 +231,63 @@ async function fetchAllData() {
         const league = findLeague(leagueId);
         if (!league) return false;
         return league.keywords.some(kw =>
-          (m.league || '').includes(kw) || (m.game || '').toLowerCase().includes(kw.toLowerCase())
+          (m.league || '').includes(kw) || (m.game || '').includes(kw)
         );
       });
     });
   }
 
-  console.log('[fetchAllData] 最终:', allMatches.length, '场');
+  console.log('[fetchAllData] 赛果结论:', allMatches.filter(m => m.type === 'result').length, '场, 未开始/进行中:', allMatches.filter(m => m.type !== 'result').length, '场');
 
   // 写入存储
   const oldData = (await chrome.storage.local.get('liveMatches')).liveMatches || [];
   await chrome.storage.local.set({ liveMatches: allMatches, lastUpdate: Date.now() });
 
-  // 存入历史
-  const finished = allMatches.filter(m => m.score !== 'vs' && m.status === '已结束');
+  // 已结束的存入历史
+  const finished = allMatches.filter(m => m.type === 'result');
   if (finished.length > 0) await saveToHistory(finished);
 
   // 通知
-  const changes = allMatches.filter(m => {
-    const old = oldData.find(o => o.id === m.id);
-    return !old || old.score !== m.score;
-  });
-  if (changes.length > 0) {
-    chrome.action.setBadgeText({ text: String(Math.min(changes.length, 99)) });
-    chrome.action.setBadgeBackgroundColor({ color: '#3fb950' });
-    for (const match of changes) {
-      if (match.score !== 'vs' && s.notifyGoals) notifyMatch(match, 'goal');
-      if (match.status === '已结束' && s.notifyFinal) notifyMatch(match, 'final');
-    }
-  } else {
-    chrome.action.setBadgeText({ text: '' });
-  }
-
-  // 同时拉取F1
-  fetchF1().then(cards => {
-    chrome.storage.local.set({ f1Data: cards });
-  });
+  detectChanges(oldData, allMatches, s);
 
   return allMatches;
 }
 
+/** 对比新旧数据，发送通知 */
+function detectChanges(oldData, newData, settings) {
+  const changes = newData.filter(m => {
+    const old = oldData.find(o => o.id === m.id);
+    return !old || old.score !== m.score || old.status !== m.status;
+  });
+
+  if (changes.length > 0) {
+    chrome.action.setBadgeText({ text: String(Math.min(changes.length, 99)) });
+    chrome.action.setBadgeBackgroundColor({ color: '#3fb950' });
+
+    for (const match of changes) {
+      if (match.type === 'result' && match.status === '已结束' && settings.notifyFinal) {
+        notifyMatch(match, 'final');
+      }
+    }
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
 // ============================================================
-// 5. 历史存储与搜索
+// 历史存储
 // ============================================================
 async function saveToHistory(matches) {
   const { matchHistory } = await chrome.storage.local.get('matchHistory');
   const history = matchHistory || {};
   const today = new Date().toISOString().split('T')[0];
   for (const match of matches) {
-    if (!match.score || match.score === 'vs') continue;
     history[`${today}_${match.id}`] = { ...match, savedDate: today, timestamp: Date.now() };
   }
-  const oneYearAgo = Date.now() - 365 * 86400000;
+  // 只保留一年
+  const cutoff = Date.now() - 365 * 86400000;
   const cleaned = {};
-  Object.entries(history).forEach(([k, v]) => { if (v.timestamp > oneYearAgo) cleaned[k] = v; });
+  Object.entries(history).forEach(([k, v]) => { if (v.timestamp > cutoff) cleaned[k] = v; });
   await chrome.storage.local.set({ matchHistory: cleaned });
 }
 
@@ -316,7 +305,7 @@ async function searchHistory(query, startDate, endDate) {
 }
 
 // ============================================================
-// 6. 收藏
+// 收藏
 // ============================================================
 async function getFavorites() {
   const { favorites } = await chrome.storage.sync.get('favorites');
@@ -332,30 +321,30 @@ async function toggleFavorite(leagueId) {
 }
 
 // ============================================================
-// 7. 通知 & 语音
+// 通知 & 语音
 // ============================================================
 function notifyMatch(match, type) {
-  const titles = { goal: '⚽ 得分！', final: '🏁 比赛结束', start: '▶ 比赛开始' };
   const gameLabel = match.game ? `[${match.game}] ` : '';
+  const sportIcon = match.sport === 'football' ? '⚽' : (match.sport === 'basketball' ? '🏀' : (match.sport === 'motorsport' ? '🏎️' : '🎮'));
+  const title = type === 'final' ? `${sportIcon} 赛果` : `${sportIcon} 赛事更新`;
+
   chrome.notifications.create(`match-${match.id}-${type}`, {
     type: 'basic', iconUrl: 'icons/icon-128.png',
-    title: titles[type] || '赛事更新',
-    message: `${gameLabel}${match.home} ${match.score} ${match.away}\n${match.league} · ${match.source}`,
-    priority: 2
+    title,
+    message: `${gameLabel}${match.league}：${match.home} ${match.score} ${match.away}\n来源：${match.source}`,
+    priority: 2,
   });
+
   chrome.storage.sync.get('settings', (data) => {
     const s = data.settings || DEFAULT_SETTINGS;
-    if (s.voiceAnnounce) {
-      if (type === 'goal' && s.voiceGoals)
-        chrome.tts.speak(`${gameLabel}${match.home} ${match.score} ${match.away}`, { lang: 'zh-CN', rate: 0.9 });
-      if (type === 'final' && s.voiceFinals)
-        chrome.tts.speak(`比赛结束，${match.league}，${match.home} ${match.score} ${match.away}`, { lang: 'zh-CN', rate: 0.85 });
+    if (s.voiceAnnounce && type === 'final' && s.voiceFinals) {
+      chrome.tts.speak(`${match.league}，${match.home} ${match.score} ${match.away}`, { lang: 'zh-CN', rate: 0.85 });
     }
   });
 }
 
 // ============================================================
-// 8. 清理 & 语音
+// 清理
 // ============================================================
 function cleanOldData() {
   chrome.notifications.getAll((items) => {
@@ -365,6 +354,10 @@ function cleanOldData() {
     }
   });
 }
+
+// ============================================================
+// 语音开关
+// ============================================================
 async function toggleVoice() {
   const { settings } = await chrome.storage.sync.get('settings');
   const s = settings || DEFAULT_SETTINGS;
@@ -375,7 +368,7 @@ async function toggleVoice() {
 }
 
 // ============================================================
-// 9. 昨日总结
+// 昨日总结
 // ============================================================
 async function generateYesterdaySummary() {
   const yesterday = new Date(Date.now() - 86400000);
@@ -385,7 +378,12 @@ async function generateYesterdaySummary() {
   const yesterdayMatches = Object.values(history).filter(m => m.savedDate === yesterdayStr);
 
   if (yesterdayMatches.length === 0) {
-    const summary = { date: yesterdayStr, dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }), total: 0, bySport: {}, byLeague: {}, highlights: [], topText: `${yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}暂无赛事记录` };
+    const summary = {
+      date: yesterdayStr,
+      dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
+      total: 0, bySport: {}, byLeague: {}, highlights: [],
+      topText: `${yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}暂无赛事记录`,
+    };
     await chrome.storage.local.set({ yesterdaySummary: summary, yesterdaySummaryDate: yesterdayStr });
     return summary;
   }
@@ -408,8 +406,10 @@ async function generateYesterdaySummary() {
 
   const sportNames = { football: '足球', basketball: '篮球', motorsport: 'F1', esports: '电竞' };
   const sportParts = Object.entries(bySport).map(([k, v]) => `${sportNames[k] || k}${v.count}场`);
+
   const summary = {
-    date: yesterdayStr, dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
+    date: yesterdayStr,
+    dateDisplay: yesterday.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }),
     total: yesterdayMatches.length, bySport, byLeague, highlights: highlights.slice(0, 10),
     topText: `${yesterday.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}共${yesterdayMatches.length}场，${sportParts.join('，')}`,
   };
