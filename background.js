@@ -1,10 +1,11 @@
 // ============================================================
-// 赛事实时播报 v2.1.0 - 扩展版
-// 赛果结论读取模式 + 热度排名 + 60+赛事
-// 来源：500.com（足球/篮球） + TheSportsDB（F1/网球） + 电竞静态日程
+// 赛事实时播报 v2.2.0 - 增强版
+// 赛果结论读取 + 资讯爬取 + 热度排名 + 60+赛事 + 13个资讯源
+// 赛果来源：500.com + TheSportsDB + 电竞静态日程
+// 资讯来源：虎扑/知乎/微博/懂球帝/直播吧/新浪/腾讯等
 // ============================================================
 
-importScripts('data/leagues.js', 'data/esports_schedule.js');
+importScripts('data/leagues.js', 'data/esports_schedule.js', 'data/sources.js');
 
 // ============================================================
 // 默认设置
@@ -21,7 +22,28 @@ const DEFAULT_SETTINGS = {
   language: 'zh',
   // 热度排序设置
   hotSortEnabled: true,
-  hotMinTier: 'B', // 最低显示级别
+  hotMinTier: 'B',
+  // 通知设置
+  notifyMinHot: 70,
+  notifyMaxPerHour: 10,
+  notifySound: true,
+  // 显示设置
+  showHotBadge: true,
+  showSource: true,
+  showGameTag: true,
+  defaultTab: 'hot',
+  maxNewsItems: 50,
+  // 资讯设置
+  newsEnabled: true,
+  newsAutoRefresh: true,
+  newsInterval: 15,
+  sourceSettings: DEFAULT_SOURCE_SETTINGS,
+  apiTokens: DEFAULT_TOKENS,
+  // 数据管理
+  autoCleanHistory: true,
+  historyKeepDays: 365,
+  // 高级
+  devMode: false,
 };
 
 // ============================================================
@@ -48,6 +70,7 @@ function setupAllAlarms() {
     chrome.alarms.create('fetchScores', { periodInMinutes: 2 });
     chrome.alarms.create('fetchF1', { periodInMinutes: 15 });
     chrome.alarms.create('fetchTennis', { periodInMinutes: 30 });
+    chrome.alarms.create('fetchNews', { periodInMinutes: 15 });
     chrome.alarms.create('cleanold', { periodInMinutes: 120 });
     chrome.alarms.create('yesterdaySummary', { when: getNextTime(8, 0), periodInMinutes: 1440 });
     chrome.alarms.create('hotRanking', { periodInMinutes: 5 });
@@ -59,6 +82,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     case 'fetchScores': await fetchAllData(); break;
     case 'fetchF1': await fetchF1Data(); break;
     case 'fetchTennis': await fetchTennisData(); break;
+    case 'fetchNews': await fetchAllNews(); break;
     case 'cleanold': cleanOldData(); break;
     case 'yesterdaySummary': await generateYesterdaySummary(); break;
     case 'hotRanking': await updateHotRanking(); break;
@@ -70,8 +94,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // ============================================================
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
-    case 'settingsUpdated': setupAllAlarms(); fetchAllData(); sendResponse({ ok: true }); break;
-    case 'refreshNow': fetchAllData().then(r => sendResponse({ ok: true, count: r.length })); return true;
+    case 'settingsUpdated': setupAllAlarms(); fetchAllData(); fetchAllNews(); sendResponse({ ok: true }); break;
+    case 'refreshNow': 
+      Promise.all([fetchAllData(), fetchAllNews()]).then(r => sendResponse({ ok: true, count: r[0]?.length || 0 })); 
+      return true;
     case 'getLeagues': sendResponse({ leagues: LEAGUES, gameCategories: GAME_CATEGORIES }); break;
     case 'searchHistory': searchHistory(msg.query, msg.startDate, msg.endDate).then(r => sendResponse(r)); return true;
     case 'getFavorites': getFavorites().then(r => sendResponse(r)); return true;
@@ -80,6 +106,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'getYesterdaySummary': getYesterdaySummaryCache().then(r => sendResponse(r)); return true;
     case 'toggleVoice': toggleVoice().then(r => sendResponse(r)); return true;
     case 'getHotRanking': getHotRanking().then(r => sendResponse(r)); return true;
+    case 'refreshNews': fetchAllNews().then(r => sendResponse({ ok: true, count: r.length })); return true;
+    case 'getSourceStatus': getSourceStatus().then(r => sendResponse(r)); return true;
   }
 });
 
@@ -335,6 +363,366 @@ function calculateHotScore(basePopularity, status, score) {
 }
 
 // ============================================================
+// 资讯爬取模块
+// 支持：HTML爬取（虎扑/懂球帝/直播吧）、RSS解析（知乎/微博）、API接口
+// ============================================================
+
+async function fetchAllNews() {
+  console.log('[资讯爬取] 开始获取资讯...');
+  
+  const { settings } = await chrome.storage.sync.get('settings');
+  const s = settings || DEFAULT_SETTINGS;
+  
+  if (s.newsEnabled === false) {
+    console.log('[资讯爬取] 已关闭，跳过');
+    return [];
+  }
+
+  const sourceSettings = s.sourceSettings || DEFAULT_SOURCE_SETTINGS;
+  const enabledSources = Object.entries(CONTENT_SOURCES).filter(([key, src]) => {
+    return sourceSettings[key]?.enabled !== false && src.enabled !== false;
+  });
+
+  console.log('[资讯爬取] 启用的源:', enabledSources.map(([k]) => k).join(', '));
+
+  // 并发爬取所有启用的源
+  const promises = enabledSources.map(([key, src]) => fetchNewsSource(key, src, s));
+  const results = await Promise.allSettled(promises);
+
+  let allFeeds = [];
+  results.forEach((r, i) => {
+    if (r.status === 'fulfilled' && r.value) {
+      allFeeds = allFeeds.concat(r.value);
+    } else {
+      console.warn(`[资讯爬取] ${enabledSources[i][0]} 失败:`, r.reason?.message);
+    }
+  });
+
+  // 去重
+  const seen = new Set();
+  allFeeds = allFeeds.filter(f => {
+    const key = f.title + f.source;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  // 按时间/热度排序
+  allFeeds.sort((a, b) => (b.hotScore || 0) - (a.hotScore || 0));
+
+  // 限制数量
+  const maxItems = s.maxNewsItems || 50;
+  allFeeds = allFeeds.slice(0, maxItems);
+
+  console.log('[资讯爬取] 共获取', allFeeds.length, '条资讯');
+  
+  await chrome.storage.local.set({ contentFeeds: allFeeds, contentLastUpdate: Date.now() });
+  return allFeeds;
+}
+
+async function fetchNewsSource(key, src, settings) {
+  try {
+    const url = buildUrl(src, settings);
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const text = await res.text();
+    const feeds = parseNews(text, src.parser, src);
+
+    // 关键词过滤
+    if (src.filter && src.filter.length > 0) {
+      const filtered = feeds.filter(f => 
+        src.filter.some(kw => f.title.includes(kw))
+      );
+      // 如果过滤后太少，保留前几条非过滤的
+      if (filtered.length < 5) {
+        return feeds.slice(0, 10);
+      }
+      return filtered;
+    }
+
+    return feeds.slice(0, 20);
+  } catch (err) {
+    console.warn(`[${src.name}] 爬取失败:`, err.message);
+    return [];
+  }
+}
+
+function buildUrl(src, settings) {
+  let url = src.url;
+  
+  if (src.type === 'api' && src.params) {
+    const params = { ...src.params };
+    // 注入token
+    if (key === 'toutiao' && settings?.apiTokens?.juhe) {
+      params.key = settings.apiTokens.juhe;
+    }
+    if (key === 'alapi_weibo' && settings?.apiTokens?.alapi) {
+      params.token = settings.apiTokens.alapi;
+    }
+    const qs = new URLSearchParams(params).toString();
+    url += (url.includes('?') ? '&' : '?') + qs;
+  }
+  
+  return url;
+}
+
+// 解析器调度
+function parseNews(text, parser, src) {
+  switch (parser) {
+    case 'html_hupu_list': return parseHupuList(text, src);
+    case 'html_dongqiudi': return parseDongqiudi(text, src);
+    case 'html_zhibo8': return parseZhibo8(text, src);
+    case 'html_sina': return parseSinaSports(text, src);
+    case 'html_qqsports': return parseQQSports(text, src);
+    case 'rss_generic': return parseRSSGeneric(text, src);
+    case 'juhe_news': return parseJuheNews(text, src);
+    case 'alapi_weibo': return parseAlapiWeibo(text, src);
+    default: return [];
+  }
+}
+
+// ===== 虎扑论坛列表解析 =====
+function parseHupuList(html, src) {
+  const feeds = [];
+  // 虎扑帖子链接：<a href="/xxx.html" class="truetit">标题</a>
+  const itemRe = /<a[^>]*href="(\/[^"]+\.html)"[^>]*class="[^"]*truetit[^"]*"[^>]*>(.*?)<\/a>/gs;
+  const matches = [...html.matchAll(itemRe)];
+  
+  for (let i = 0; i < matches.length; i++) {
+    const m = matches[i];
+    const link = m[1];
+    const title = m[2].replace(/<[^>]+>/g, '').trim();
+    if (!title || title.length < 5) continue;
+    
+    // 提取回复数/浏览量作为热度参考
+    let hot = 50 - i * 2; // 排名越靠前热度越高
+    const replyRe = new RegExp(`<a[^>]*href="${link.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[\\s\\S]*?(\\d+)\\s*回复`);
+    const replyMatch = html.match(replyRe);
+    if (replyMatch) {
+      const replies = parseInt(replyMatch[1]);
+      hot = Math.min(100, 50 + Math.log2(replies + 1) * 10);
+    }
+
+    feeds.push({
+      id: `hupu-${i}-${Date.now()}`,
+      title,
+      url: `https://bbs.hupu.com${link}`,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(hot),
+      time: new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 懂球帝解析 =====
+function parseDongqiudi(html, src) {
+  const feeds = [];
+  // 懂球帝新闻链接
+  const itemRe = /<a[^>]*href="(\/news\/\d+)"[^>]*>[\s\S]*?<span[^>]*>(.*?)<\/span>[\s\S]*?<\/a>/gs;
+  const matches = [...html.matchAll(itemRe)];
+  
+  for (let i = 0; i < Math.min(matches.length, 20); i++) {
+    const m = matches[i];
+    const link = m[1];
+    const title = m[2].replace(/<[^>]+>/g, '').trim();
+    if (!title || title.length < 5) continue;
+
+    feeds.push({
+      id: `dqd-${i}-${Date.now()}`,
+      title,
+      url: `https://www.dongqiudi.com${link}`,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(80 - i * 3),
+      time: new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 直播吧解析 =====
+function parseZhibo8(html, src) {
+  const feeds = [];
+  // 直播吧新闻
+  const itemRe = /<a[^>]*href="([^"]*\/\d+\.s?html)"[^>]*title="([^"]*)"/gs;
+  const matches = [...html.matchAll(itemRe)];
+  
+  for (let i = 0; i < Math.min(matches.length, 20); i++) {
+    const m = matches[i];
+    let url = m[1];
+    const title = m[2].trim();
+    if (!title || title.length < 5) continue;
+    
+    if (url.startsWith('//')) url = 'https:' + url;
+    else if (url.startsWith('/')) url = 'https://www.zhibo8.cc' + url;
+
+    feeds.push({
+      id: `zhibo8-${i}-${Date.now()}`,
+      title,
+      url,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(75 - i * 3),
+      time: new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 新浪体育解析 =====
+function parseSinaSports(html, src) {
+  const feeds = [];
+  const itemRe = /<a[^>]*href="(https?:\/\/sports\.sina\.com\.cn[^"]+)"[^>]*>([^<]{10,100})<\/a>/gs;
+  const matches = [...html.matchAll(itemRe)];
+  
+  for (let i = 0; i < Math.min(matches.length, 15); i++) {
+    const m = matches[i];
+    const title = m[2].trim();
+    if (!title || title.length < 8) continue;
+
+    feeds.push({
+      id: `sina-${i}-${Date.now()}`,
+      title,
+      url: m[1],
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(70 - i * 4),
+      time: new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 腾讯体育解析 =====
+function parseQQSports(html, src) {
+  const feeds = [];
+  const itemRe = /<a[^>]*href="(https?:\/\/sports\.qq\.com[^"]+)"[^>]*>([^<]{10,100})<\/a>/gs;
+  const matches = [...html.matchAll(itemRe)];
+  
+  for (let i = 0; i < Math.min(matches.length, 15); i++) {
+    const m = matches[i];
+    const title = m[2].trim();
+    if (!title || title.length < 8) continue;
+
+    feeds.push({
+      id: `qq-${i}-${Date.now()}`,
+      title,
+      url: m[1],
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(65 - i * 4),
+      time: new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 通用RSS解析 =====
+function parseRSSGeneric(xml, src) {
+  const feeds = [];
+  
+  // 提取 <item> 或 <entry>
+  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
+  const entryRe = /<entry>([\s\S]*?)<\/entry>/gi;
+  
+  let items = [...xml.matchAll(itemRe)];
+  if (items.length === 0) items = [...xml.matchAll(entryRe)];
+  
+  for (let i = 0; i < Math.min(items.length, 20); i++) {
+    const itemXml = items[i][1];
+    
+    const titleMatch = itemXml.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const linkMatch = itemXml.match(/<link[^>]*href="([^"]+)"[^>]*>/i) || 
+                     itemXml.match(/<link[^>]*>([^<]+)<\/link>/i);
+    const pubDateMatch = itemXml.match(/<pubDate>([^<]+)<\/pubDate>/i) ||
+                        itemXml.match(/<updated>([^<]+)<\/updated>/i) ||
+                        itemXml.match(/<published>([^<]+)<\/published>/i);
+    
+    const title = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[|\]\]>/g, '').trim() : '';
+    const link = linkMatch ? linkMatch[1].trim() : '';
+    
+    if (!title || title.length < 5) continue;
+
+    feeds.push({
+      id: `rss-${src.name}-${i}-${Date.now()}`,
+      title,
+      url: link,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(75 - i * 3),
+      time: pubDateMatch ? pubDateMatch[1].trim() : new Date().toISOString(),
+      type: 'news',
+    });
+  }
+  
+  return feeds;
+}
+
+// ===== 聚合数据新闻API解析 =====
+function parseJuheNews(text, src) {
+  try {
+    const data = JSON.parse(text);
+    if (data.error_code !== 0 || !data.result?.data) return [];
+    
+    return data.result.data.slice(0, 20).map((item, i) => ({
+      id: `juhe-${i}-${Date.now()}`,
+      title: item.title,
+      url: item.url,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.round(70 - i * 3),
+      time: item.date || new Date().toISOString(),
+      type: 'news',
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// ===== ALAPI微博热搜解析 =====
+function parseAlapiWeibo(text, src) {
+  try {
+    const data = JSON.parse(text);
+    if (data.code !== 200 || !data.data) return [];
+    
+    return data.data.slice(0, 20).map((item, i) => ({
+      id: `alapi-wb-${i}-${Date.now()}`,
+      title: item.title || item.name || '',
+      url: `https://s.weibo.com/weibo?q=${encodeURIComponent(item.title || item.name || '')}`,
+      source: src.name,
+      sourceIcon: src.icon,
+      hotScore: Math.min(100, Math.round(100 - i * 4 + (item.hot ? Math.log2(item.hot) : 0))),
+      time: new Date().toISOString(),
+      type: 'news',
+    }));
+  } catch (e) {
+    return [];
+  }
+}
+
+// ============================================================
 // 热度排名
 // ============================================================
 async function updateHotRanking() {
@@ -390,6 +778,9 @@ async function fetchAllData() {
   // 同时异步拉取最新F1和网球数据（不阻塞主流程）
   fetchF1Data();
   fetchTennisData();
+  
+  // 异步拉取资讯（不阻塞主流程）
+  fetchAllNews();
 
   let allMatches = [...football, ...basketball, ...f1Cached, ...tennisCached, ...esportsCards];
 
@@ -609,6 +1000,29 @@ async function getYesterdaySummaryCache() {
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
   const { yesterdaySummary, yesterdaySummaryDate } = await chrome.storage.local.get(['yesterdaySummary', 'yesterdaySummaryDate']);
   return { summary: (yesterdaySummary && yesterdaySummaryDate === yesterday) ? yesterdaySummary : null, cached: !!(yesterdaySummary && yesterdaySummaryDate === yesterday) };
+}
+
+async function getSourceStatus() {
+  const { contentFeeds, contentLastUpdate } = await chrome.storage.local.get(['contentFeeds', 'contentLastUpdate']);
+  const { settings } = await chrome.storage.sync.get('settings');
+  const s = settings || DEFAULT_SETTINGS;
+  const sourceSettings = s.sourceSettings || DEFAULT_SOURCE_SETTINGS;
+  
+  const status = {};
+  for (const [key, src] of Object.entries(CONTENT_SOURCES)) {
+    const enabled = sourceSettings[key]?.enabled !== false;
+    // 统计该来源的资讯数量
+    const count = (contentFeeds || []).filter(f => f.source === src.name).length;
+    status[key] = {
+      name: src.name,
+      enabled,
+      type: src.type,
+      count,
+      lastUpdate: contentLastUpdate || null,
+    };
+  }
+  
+  return { sources: status, total: (contentFeeds || []).length };
 }
 
 function getNextTime(hour, minute) {

@@ -1,16 +1,30 @@
 // ============================================================
-// 赛事实时播报 v2.0.5 - 设置页面逻辑
+// 赛事实时播报 v2.2.0 - 设置页面逻辑
 // ============================================================
 
-const DEFAULT_SETTINGS = {
-  refreshInterval: 30,
+const DEFAULT_SETTINGS_FULL = {
+  refreshInterval: 120,
   notifyGoals: true,
   notifyFinal: true,
   notifyStart: false,
+  notifyMinHot: 70,
+  notifySound: true,
   voiceAnnounce: false,
   voiceGoals: true,
   voiceFinals: true,
+  voiceRate: 0.85,
   selectedLeagues: [],
+  hotSortEnabled: true,
+  showHotBadge: true,
+  showSource: true,
+  showGameTag: true,
+  defaultTab: 'hot',
+  maxNewsItems: 50,
+  newsEnabled: true,
+  newsInterval: 15,
+  autoCleanHistory: true,
+  historyKeepDays: 365,
+  devMode: false,
   sourceSettings: DEFAULT_SOURCE_SETTINGS,
   apiTokens: DEFAULT_TOKENS,
 };
@@ -23,6 +37,7 @@ let selectedLeagues = new Set();
 // ============================================================
 document.addEventListener('DOMContentLoaded', async () => {
   await loadSettings();
+  await loadDataStats();
 
   // 搜索
   document.getElementById('searchInput').addEventListener('input', (e) => renderLeagueList(e.target.value));
@@ -60,6 +75,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 恢复默认
   document.getElementById('resetBtn').addEventListener('click', resetSettings);
+
+  // 数据管理按钮
+  document.getElementById('exportDataBtn').addEventListener('click', exportData);
+  document.getElementById('importDataBtn').addEventListener('click', importData);
+  document.getElementById('clearAllBtn').addEventListener('click', clearAllData);
 });
 
 // ============================================================
@@ -67,33 +87,78 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ============================================================
 async function loadSettings() {
   const { settings } = await chrome.storage.sync.get('settings');
-  const s = settings || DEFAULT_SETTINGS;
+  const s = { ...DEFAULT_SETTINGS_FULL, ...(settings || {}) };
 
   selectedLeagues = new Set(s.selectedLeagues || []);
-  document.getElementById('refreshInterval').value = s.refreshInterval || 30;
+
+  // 刷新设置
+  document.getElementById('refreshInterval').value = s.refreshInterval || 120;
+
+  // 通知设置
   document.getElementById('notifyGoals').checked = s.notifyGoals !== false;
   document.getElementById('notifyFinal').checked = s.notifyFinal !== false;
   document.getElementById('notifyStart').checked = s.notifyStart === true;
+  document.getElementById('notifyMinHot').value = s.notifyMinHot ?? 70;
+  document.getElementById('notifySound').checked = s.notifySound !== false;
+
+  // 语音设置
   document.getElementById('voiceAnnounce').checked = s.voiceAnnounce === true;
   document.getElementById('voiceGoals').checked = s.voiceGoals !== false;
   document.getElementById('voiceFinals').checked = s.voiceFinals !== false;
+  document.getElementById('voiceRate').value = s.voiceRate || 0.85;
 
-  // 内容源
+  // 显示设置
+  document.getElementById('hotSortEnabled').checked = s.hotSortEnabled !== false;
+  document.getElementById('showHotBadge').checked = s.showHotBadge !== false;
+  document.getElementById('showSource').checked = s.showSource !== false;
+  document.getElementById('showGameTag').checked = s.showGameTag !== false;
+  document.getElementById('defaultTab').value = s.defaultTab || 'hot';
+
+  // 资讯设置
+  document.getElementById('newsEnabled').checked = s.newsEnabled !== false;
+  document.getElementById('newsInterval').value = s.newsInterval || 15;
+  document.getElementById('maxNewsItems').value = s.maxNewsItems || 50;
+
+  // 资讯源
   const src = s.sourceSettings || DEFAULT_SOURCE_SETTINGS;
-  document.getElementById('src-weibo').checked = src.weibo?.enabled !== false;
-  document.getElementById('src-zhihu').checked = src.zhihu?.enabled !== false;
-  document.getElementById('src-hupu').checked = src.hupu?.enabled !== false;
-  document.getElementById('src-hupu_esports').checked = src.hupu_esports?.enabled !== false;
-  document.getElementById('src-zhihu_esports').checked = src.zhihu_esports?.enabled === true;
-  document.getElementById('src-toutiao').checked = src.toutiao?.enabled === true;
+  const sourceIds = [
+    'hupu_bxj', 'hupu_nba', 'hupu_football', 'hupu_esports',
+    'zhihu_hot', 'zhihu_esports', 'weibo',
+    'dongqiudi', 'zhibo8', 'sina_sports', 'qq_sports',
+    'toutiao', 'alapi_weibo'
+  ];
+  sourceIds.forEach(id => {
+    const el = document.getElementById('src-' + id);
+    if (el) el.checked = src[id]?.enabled !== false;
+  });
 
   // API Tokens
   const tokens = s.apiTokens || DEFAULT_TOKENS;
   document.getElementById('token-alapi').value = tokens.alapi || '';
   document.getElementById('token-juhe').value = tokens.juhe || '';
 
+  // 数据管理
+  document.getElementById('autoCleanHistory').checked = s.autoCleanHistory !== false;
+  document.getElementById('historyKeepDays').value = s.historyKeepDays ?? 365;
+
   renderLeagueList();
   renderSelectedTags();
+}
+
+// ============================================================
+// 加载数据统计
+// ============================================================
+async function loadDataStats() {
+  const local = await chrome.storage.local.get(['matchHistory', 'contentFeeds']);
+  const sync = await chrome.storage.sync.get('favorites');
+
+  const history = local.matchHistory || {};
+  const feeds = local.contentFeeds || [];
+  const favs = sync.favorites || [];
+
+  document.getElementById('stat-matches').textContent = Object.keys(history).length;
+  document.getElementById('stat-news').textContent = feeds.length;
+  document.getElementById('stat-favs').textContent = favs.length;
 }
 
 // ============================================================
@@ -122,6 +187,9 @@ function renderLeagueList(searchQuery = '') {
     return;
   }
 
+  // 按热度排序
+  filtered.sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+
   // 按电竞游戏分组
   if (currentSport === 'esports' || currentSport === 'all') {
     const esports = filtered.filter(l => l.game);
@@ -148,13 +216,14 @@ function renderLeagueList(searchQuery = '') {
 
 function renderLeagueItem(l) {
   const gameTag = l.game ? `<span class="league-game">${l.game}</span>` : '';
+  const tierBadge = l.tier ? `<span class="league-tier tier-${l.tier}">${l.tier}</span>` : '';
   let sportLabel = l.game ? getSportLabel('esports') : getSportLabel(l.sport || 'football');
-  let icon = l.game ? '🎮' : (l.sport === 'motorsport' ? '🏎️' : (l.sport === 'basketball' ? '🏀' : '⚽'));
+  let icon = l.game ? '🎮' : (l.sport === 'motorsport' ? '🏎️' : (l.sport === 'basketball' ? '🏀' : (l.sport === 'tennis' ? '🎾' : (l.sport === 'tabletennis' ? '🏓' : '⚽'))));
   return `
     <label class="league-item">
       <input type="checkbox" value="${l.id}" ${selectedLeagues.has(l.id) ? 'checked' : ''}>
       <span class="league-icon">${icon}</span>
-      <span class="league-name">${l.name}</span>
+      <span class="league-name">${l.name}${tierBadge}</span>
       ${gameTag}
       <span class="league-sport">${sportLabel}</span>
     </label>`;
@@ -181,26 +250,55 @@ function renderSelectedTags() {
 // ============================================================
 async function saveSettings() {
   const settings = {
+    // 刷新
     refreshInterval: Number(document.getElementById('refreshInterval').value),
+    // 通知
     notifyGoals: document.getElementById('notifyGoals').checked,
     notifyFinal: document.getElementById('notifyFinal').checked,
     notifyStart: document.getElementById('notifyStart').checked,
+    notifyMinHot: Number(document.getElementById('notifyMinHot').value),
+    notifySound: document.getElementById('notifySound').checked,
+    // 语音
     voiceAnnounce: document.getElementById('voiceAnnounce').checked,
     voiceGoals: document.getElementById('voiceGoals').checked,
     voiceFinals: document.getElementById('voiceFinals').checked,
+    voiceRate: parseFloat(document.getElementById('voiceRate').value),
+    // 联赛
     selectedLeagues: [...selectedLeagues],
+    // 显示
+    hotSortEnabled: document.getElementById('hotSortEnabled').checked,
+    showHotBadge: document.getElementById('showHotBadge').checked,
+    showSource: document.getElementById('showSource').checked,
+    showGameTag: document.getElementById('showGameTag').checked,
+    defaultTab: document.getElementById('defaultTab').value,
+    maxNewsItems: Number(document.getElementById('maxNewsItems').value),
+    // 资讯
+    newsEnabled: document.getElementById('newsEnabled').checked,
+    newsInterval: Number(document.getElementById('newsInterval').value),
+    // 资讯源
     sourceSettings: {
-      weibo:         { enabled: document.getElementById('src-weibo').checked, interval: 10 },
-      zhihu:         { enabled: document.getElementById('src-zhihu').checked, interval: 15 },
-      zhihu_esports: { enabled: document.getElementById('src-zhihu_esports').checked, interval: 30 },
-      hupu:          { enabled: document.getElementById('src-hupu').checked, interval: 15 },
-      hupu_esports:  { enabled: document.getElementById('src-hupu_esports').checked, interval: 15 },
-      toutiao:       { enabled: document.getElementById('src-toutiao').checked, interval: 10 },
+      hupu_bxj:        { enabled: document.getElementById('src-hupu_bxj').checked,        interval: 15 },
+      hupu_nba:         { enabled: document.getElementById('src-hupu_nba').checked,         interval: 15 },
+      hupu_football:    { enabled: document.getElementById('src-hupu_football').checked,    interval: 15 },
+      hupu_esports:     { enabled: document.getElementById('src-hupu_esports').checked,     interval: 15 },
+      zhihu_hot:        { enabled: document.getElementById('src-zhihu_hot').checked,        interval: 20 },
+      zhihu_esports:    { enabled: document.getElementById('src-zhihu_esports').checked,    interval: 30 },
+      weibo:            { enabled: document.getElementById('src-weibo').checked,            interval: 10 },
+      dongqiudi:        { enabled: document.getElementById('src-dongqiudi').checked,        interval: 15 },
+      zhibo8:           { enabled: document.getElementById('src-zhibo8').checked,           interval: 15 },
+      sina_sports:      { enabled: document.getElementById('src-sina_sports').checked,      interval: 20 },
+      qq_sports:        { enabled: document.getElementById('src-qq_sports').checked,        interval: 20 },
+      toutiao:          { enabled: document.getElementById('src-toutiao').checked,          interval: 10 },
+      alapi_weibo:      { enabled: document.getElementById('src-alapi_weibo').checked,      interval: 10 },
     },
+    // API
     apiTokens: {
       alapi: document.getElementById('token-alapi').value.trim(),
       juhe:  document.getElementById('token-juhe').value.trim(),
     },
+    // 数据
+    autoCleanHistory: document.getElementById('autoCleanHistory').checked,
+    historyKeepDays: Number(document.getElementById('historyKeepDays').value),
   };
 
   await chrome.storage.sync.set({ settings });
@@ -213,24 +311,49 @@ async function saveSettings() {
 // ============================================================
 function resetSettings() {
   if (!confirm('确定恢复默认设置？当前配置将被清除。')) return;
-  selectedLeagues = new Set(DEFAULT_SETTINGS.selectedLeagues);
-  document.getElementById('refreshInterval').value = DEFAULT_SETTINGS.refreshInterval;
-  document.getElementById('notifyGoals').checked = DEFAULT_SETTINGS.notifyGoals;
-  document.getElementById('notifyFinal').checked = DEFAULT_SETTINGS.notifyFinal;
-  document.getElementById('notifyStart').checked = DEFAULT_SETTINGS.notifyStart;
-  document.getElementById('voiceAnnounce').checked = DEFAULT_SETTINGS.voiceAnnounce;
-  document.getElementById('voiceGoals').checked = DEFAULT_SETTINGS.voiceGoals;
-  document.getElementById('voiceFinals').checked = DEFAULT_SETTINGS.voiceFinals;
 
-  document.getElementById('src-weibo').checked = true;
-  document.getElementById('src-zhihu').checked = true;
-  document.getElementById('src-hupu').checked = true;
-  document.getElementById('src-hupu_esports').checked = true;
-  document.getElementById('src-zhihu_esports').checked = false;
-  document.getElementById('src-toutiao').checked = false;
+  selectedLeagues = new Set();
 
+  // 刷新
+  document.getElementById('refreshInterval').value = 120;
+  // 通知
+  document.getElementById('notifyGoals').checked = true;
+  document.getElementById('notifyFinal').checked = true;
+  document.getElementById('notifyStart').checked = false;
+  document.getElementById('notifyMinHot').value = 70;
+  document.getElementById('notifySound').checked = true;
+  // 语音
+  document.getElementById('voiceAnnounce').checked = false;
+  document.getElementById('voiceGoals').checked = true;
+  document.getElementById('voiceFinals').checked = true;
+  document.getElementById('voiceRate').value = 0.85;
+  // 显示
+  document.getElementById('hotSortEnabled').checked = true;
+  document.getElementById('showHotBadge').checked = true;
+  document.getElementById('showSource').checked = true;
+  document.getElementById('showGameTag').checked = true;
+  document.getElementById('defaultTab').value = 'hot';
+  document.getElementById('maxNewsItems').value = 50;
+  // 资讯
+  document.getElementById('newsEnabled').checked = true;
+  document.getElementById('newsInterval').value = 15;
+  // 资讯源
+  const defaults = {
+    hupu_bxj: true, hupu_nba: true, hupu_football: true, hupu_esports: true,
+    zhihu_hot: true, zhihu_esports: false, weibo: true,
+    dongqiudi: true, zhibo8: true, sina_sports: false, qq_sports: false,
+    toutiao: false, alapi_weibo: false,
+  };
+  Object.entries(defaults).forEach(([id, val]) => {
+    const el = document.getElementById('src-' + id);
+    if (el) el.checked = val;
+  });
+  // API
   document.getElementById('token-alapi').value = '';
   document.getElementById('token-juhe').value = '';
+  // 数据
+  document.getElementById('autoCleanHistory').checked = true;
+  document.getElementById('historyKeepDays').value = 365;
 
   renderLeagueList();
   renderSelectedTags();
@@ -238,16 +361,69 @@ function resetSettings() {
 }
 
 // ============================================================
+// 数据管理
+// ============================================================
+async function exportData() {
+  const sync = await chrome.storage.sync.get(null);
+  const local = await chrome.storage.local.get(null);
+  const data = { sync, local, exportTime: new Date().toISOString(), version: '2.2.0' };
+
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `sports-live-backup-${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('数据已导出 ✓');
+}
+
+async function importData() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!confirm('导入数据将覆盖当前所有设置和数据，确定继续？')) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (data.sync) await chrome.storage.sync.set(data.sync);
+      if (data.local) await chrome.storage.local.set(data.local);
+      showToast('数据导入成功 ✓');
+      loadSettings();
+      loadDataStats();
+    } catch (err) {
+      showToast('导入失败：文件格式错误', true);
+    }
+  };
+  input.click();
+}
+
+async function clearAllData() {
+  if (!confirm('确定清空全部数据？此操作不可恢复！')) return;
+  if (!confirm('再次确认：所有设置、历史记录、缓存将被清空？')) return;
+
+  await chrome.storage.sync.clear();
+  await chrome.storage.local.clear();
+  showToast('数据已清空');
+  setTimeout(() => location.reload(), 1000);
+}
+
+// ============================================================
 // 工具函数
 // ============================================================
 function getSportLabel(sport) {
-  const map = { football: '世界杯', basketball: 'NBA', motorsport: 'F1', esports: '电竞' };
+  const map = { football: '足球', basketball: '篮球', motorsport: '赛车', tennis: '网球', tabletennis: '乒乓球', esports: '电竞' };
   return map[sport] || sport;
 }
 
-function showToast(msg) {
+function showToast(msg, isError = false) {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
+  toast.classList.toggle('error', isError);
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2000);
 }
